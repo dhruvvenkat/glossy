@@ -35,9 +35,11 @@ class AnswerQuestionTest(unittest.TestCase):
     @patch("ask.subprocess.run")
     def test_speak_uses_piper_then_aplay(self, run):
         with tempfile.TemporaryDirectory() as directory:
-            voice = Path(directory) / "voice.onnx"
+            voice_dir = Path(directory)
+            voice = voice_dir / "voice.onnx"
             voice.touch()
-            with patch.object(ask, "VOICE_MODEL", voice):
+            (voice_dir / "selected").write_text("voice\n")
+            with patch.object(ask, "VOICE_DIR", voice_dir):
                 ask.speak("A clear answer.")
 
         piper, player = run.call_args_list
