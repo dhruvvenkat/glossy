@@ -1,0 +1,6 @@
+ - threads: i.e. if i'm reading a chapter of a book i might want the bot to collect all of my questions as context and use it to aid its answers as i go deeper and increase in complexity
+  --> context window
+  --> need to figure out the optimal way of interacting with the bot (GUI, specific voice keywords like "new thread" or "explain thread"?)
+  --> how to store context - md/txt file in ~/.config?
+
+ - smoother animation - right now it looks very crude, need to smoothen out the appearing/disappearing transition, round out the corners, make it less pixellated, more sensitive to changes in voice volume to actually make it look alive
