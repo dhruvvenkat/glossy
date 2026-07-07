@@ -14,6 +14,7 @@ from openai import OpenAI
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 VOICE_DIR = Path(__file__).parent / "voices"
+BLIP_SOUND = Path(__file__).parent / "blip.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
 MIN_HOLD_SECONDS = 1
 SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
@@ -95,14 +96,7 @@ def stop_recording(recorder, path):
 
 
 def play_blip():
-    subprocess.run(
-        [
-            "canberra-gtk-play",
-            "--id=audio-volume-change",
-            "--description=Glossy recording",
-        ],
-        check=False,
-    )
+    subprocess.run(["paplay", str(BLIP_SOUND)], check=False)
 
 
 def speak(text):

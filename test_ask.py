@@ -47,6 +47,11 @@ class AnswerQuestionTest(unittest.TestCase):
         self.assertEqual(piper.kwargs["input"], "A clear answer.\n")
         self.assertEqual(player.args[0][0:2], ["aplay", "--quiet"])
 
+    @patch("ask.subprocess.run")
+    def test_blip_uses_requested_sound(self, run):
+        ask.play_blip()
+        run.assert_called_once_with(["paplay", str(ask.BLIP_SOUND)], check=False)
+
 
 class InputDelayTest(unittest.TestCase):
     @patch("builtins.print")
