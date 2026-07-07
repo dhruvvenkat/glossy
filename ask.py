@@ -15,13 +15,7 @@ from openai import OpenAI
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 VOICE_MODEL = Path(__file__).parent / "voices/en_US-lessac-medium.onnx"
 MIN_HOLD_SECONDS = 0.35
-SYSTEM_PROMPT = (
-    "You are a quick-reference tutor for a reader of technical books. Answer the "
-    "user's question directly and concisely enough to be useful when spoken aloud. "
-    "Balance high-level intuition with enough concrete technical depth to educate "
-    "them properly, and briefly define unfamiliar jargon. Do not sacrifice correctness "
-    "for brevity."
-)
+SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
 
 
 def load_config(path=ENV_FILE):

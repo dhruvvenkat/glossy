@@ -33,6 +33,8 @@ foreground first:
 venv/bin/python ask.py
 ```
 
+Edit `system-prompt.md` to control answer length and style, then restart Glossy.
+
 On GNOME, disable Caps Lock's normal typing behavior in GNOME Tweaks if you do
 not want each question to toggle capitalization. Glossy still receives the raw
 physical key event.
