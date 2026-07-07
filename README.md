@@ -3,7 +3,8 @@
 Hold Right Alt, ask a question, then release it. Glossy records the hold with
 `arecord`, transcribes it with OpenAI Whisper, asks the configured OpenAI model,
 and reads the answer with a local Piper neural voice. Holds shorter than 350 ms
-are ignored; after that threshold, a blip plays and recording starts.
+are ignored; after that threshold, a blip starts recording and a reversed blip
+marks its end.
 
 ## Setup
 

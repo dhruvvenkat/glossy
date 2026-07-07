@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import ask
 
@@ -48,9 +48,16 @@ class AnswerQuestionTest(unittest.TestCase):
         self.assertEqual(player.args[0][0:2], ["aplay", "--quiet"])
 
     @patch("ask.subprocess.run")
-    def test_blip_uses_requested_sound(self, run):
-        ask.play_blip()
-        run.assert_called_once_with(["paplay", str(ask.BLIP_SOUND)], check=False)
+    def test_blips_use_requested_sounds(self, run):
+        ask.play_blip(ask.START_BLIP_SOUND)
+        ask.play_blip(ask.STOP_BLIP_SOUND)
+        self.assertEqual(
+            run.call_args_list,
+            [
+                call(["paplay", str(ask.START_BLIP_SOUND)], check=False),
+                call(["paplay", str(ask.STOP_BLIP_SOUND)], check=False),
+            ],
+        )
 
 
 class InputDelayTest(unittest.TestCase):
@@ -85,8 +92,10 @@ class InputDelayTest(unittest.TestCase):
         self, play_blip, start_recording, stop_recording, answer_question, _print
     ):
         order = []
-        play_blip.side_effect = lambda: order.append("blip")
+        play_blip.side_effect = lambda sound: order.append(sound.name)
         start_recording.side_effect = lambda _path: order.append("record") or Mock()
+        stop_recording.side_effect = lambda *_args: order.append("stop")
+        answer_question.side_effect = lambda *_args: order.append("answer")
         keyboard = Mock()
         keyboard.read.side_effect = [
             [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=1)],
@@ -103,7 +112,10 @@ class InputDelayTest(unittest.TestCase):
             ask.listen(Mock(), "test-model")
 
         start_recording.assert_called_once()
-        self.assertEqual(order, ["blip", "record"])
+        self.assertEqual(
+            order,
+            ["blip.mp3", "record", "stop", "blip-reversed.mp3", "answer"],
+        )
         stop_recording.assert_called_once()
         answer_question.assert_called_once()
 

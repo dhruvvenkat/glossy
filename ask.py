@@ -14,7 +14,8 @@ from openai import OpenAI
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 VOICE_DIR = Path(__file__).parent / "voices"
-BLIP_SOUND = Path(__file__).parent / "blip.mp3"
+START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
+STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
 MIN_HOLD_SECONDS = 1
 SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
@@ -95,8 +96,8 @@ def stop_recording(recorder, path):
         raise RuntimeError(error.strip() or "No audio was recorded")
 
 
-def play_blip():
-    subprocess.run(["paplay", str(BLIP_SOUND)], check=False)
+def play_blip(sound):
+    subprocess.run(["paplay", str(sound)], check=False)
 
 
 def speak(text):
@@ -166,7 +167,7 @@ def listen(client, model):
             if pressed_at is not None and recorder is None:
                 remaining = MIN_HOLD_SECONDS - (time.monotonic() - pressed_at)
                 if remaining <= 0:
-                    play_blip()
+                    play_blip(START_BLIP_SOUND)
                     recorder = start_recording(audio_path)
                     print("Recording...", flush=True)
                 else:
@@ -185,6 +186,7 @@ def listen(client, model):
                                 print("Ignored short press.", flush=True)
                             else:
                                 stop_recording(recorder, audio_path)
+                                play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
                                 answer_question(client, model, audio_path)
                                 print("Ready.", flush=True)
