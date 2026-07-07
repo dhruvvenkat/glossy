@@ -45,7 +45,7 @@ def find_keyboards():
     for path in list_devices():
         try:
             device = InputDevice(path)
-            if ecodes.KEY_CAPSLOCK in device.capabilities().get(ecodes.EV_KEY, []):
+            if ecodes.KEY_HOME in device.capabilities().get(ecodes.EV_KEY, []):
                 keyboards.append(device)
             else:
                 device.close()
@@ -160,7 +160,7 @@ def listen(client, model):
             readable, _, _ = select.select(keyboards, [], [])
             for keyboard in readable:
                 for event in keyboard.read():
-                    if event.type != ecodes.EV_KEY or event.code != ecodes.KEY_CAPSLOCK:
+                    if event.type != ecodes.EV_KEY or event.code != ecodes.KEY_HOME:
                         continue
                     if event.value == 1 and recorder is None:
                         recorder = start_recording(audio_path)
