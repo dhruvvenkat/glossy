@@ -51,7 +51,8 @@ class AnswerQuestionTest(unittest.TestCase):
 class InputDelayTest(unittest.TestCase):
     @patch("builtins.print")
     @patch("ask.start_recording")
-    def test_short_press_never_starts_recording(self, start_recording, _print):
+    @patch("ask.play_blip")
+    def test_short_press_never_starts_recording(self, play_blip, start_recording, _print):
         keyboard = Mock()
         keyboard.read.side_effect = [
             [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=1)],
@@ -68,14 +69,19 @@ class InputDelayTest(unittest.TestCase):
             ask.listen(Mock(), "test-model")
 
         start_recording.assert_not_called()
+        play_blip.assert_not_called()
 
     @patch("builtins.print")
     @patch("ask.answer_question")
     @patch("ask.stop_recording")
     @patch("ask.start_recording")
+    @patch("ask.play_blip")
     def test_recording_starts_after_threshold(
-        self, start_recording, stop_recording, answer_question, _print
+        self, play_blip, start_recording, stop_recording, answer_question, _print
     ):
+        order = []
+        play_blip.side_effect = lambda: order.append("blip")
+        start_recording.side_effect = lambda _path: order.append("record") or Mock()
         keyboard = Mock()
         keyboard.read.side_effect = [
             [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=1)],
@@ -92,6 +98,7 @@ class InputDelayTest(unittest.TestCase):
             ask.listen(Mock(), "test-model")
 
         start_recording.assert_called_once()
+        self.assertEqual(order, ["blip", "record"])
         stop_recording.assert_called_once()
         answer_question.assert_called_once()
 

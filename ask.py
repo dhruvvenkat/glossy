@@ -94,6 +94,17 @@ def stop_recording(recorder, path):
         raise RuntimeError(error.strip() or "No audio was recorded")
 
 
+def play_blip():
+    subprocess.run(
+        [
+            "canberra-gtk-play",
+            "--id=audio-volume-change",
+            "--description=Glossy recording",
+        ],
+        check=False,
+    )
+
+
 def speak(text):
     selection = VOICE_DIR / "selected"
     voice = selection.read_text().strip() if selection.exists() else DEFAULT_VOICE
@@ -161,6 +172,7 @@ def listen(client, model):
             if pressed_at is not None and recorder is None:
                 remaining = MIN_HOLD_SECONDS - (time.monotonic() - pressed_at)
                 if remaining <= 0:
+                    play_blip()
                     recorder = start_recording(audio_path)
                     print("Recording...", flush=True)
                 else:
