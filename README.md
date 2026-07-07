@@ -2,13 +2,15 @@
 
 Hold Caps Lock, ask a question, then release it. Glossy records the hold with
 `arecord`, transcribes it with OpenAI Whisper, asks the configured OpenAI model,
-and reads the answer with `spd-say`. Holds shorter than 350 ms are ignored.
+and reads the answer with a local Piper neural voice. Holds shorter than 350 ms
+are ignored.
 
 ## Setup
 
 ```sh
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt
+venv/bin/python -m piper.download_voices --download-dir voices en_US-lessac-medium
 sudo usermod -aG input "$USER"
 ```
 

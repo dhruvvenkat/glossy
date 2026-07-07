@@ -13,6 +13,7 @@ from evdev import InputDevice, ecodes, list_devices
 from openai import OpenAI
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
+VOICE_MODEL = Path(__file__).parent / "voices/en_US-lessac-medium.onnx"
 MIN_HOLD_SECONDS = 0.35
 SYSTEM_PROMPT = (
     "You are a quick-reference tutor for a reader of technical books. Answer the "
@@ -99,13 +100,28 @@ def stop_recording(recorder, path):
 
 
 def speak(text):
-    subprocess.run(
-        ["spd-say", "--wait", "--pipe-mode"],
-        input=text.replace("\n", " ") + "\n",
-        text=True,
-        stdout=subprocess.DEVNULL,
-        check=True,
-    )
+    if not VOICE_MODEL.exists():
+        raise RuntimeError(f"Piper voice not found: {VOICE_MODEL}")
+
+    speech_path = Path(tempfile.gettempdir()) / f"glossy-speech-{os.getpid()}.wav"
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "piper",
+                "--model",
+                str(VOICE_MODEL),
+                "--output-file",
+                str(speech_path),
+            ],
+            input=text.replace("\n", " ") + "\n",
+            text=True,
+            check=True,
+        )
+        subprocess.run(["aplay", "--quiet", str(speech_path)], check=True)
+    finally:
+        speech_path.unlink(missing_ok=True)
 
 
 def answer_question(client, model, audio_path):
