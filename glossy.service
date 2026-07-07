@@ -1,0 +1,15 @@
+[Unit]
+Description=Glossy push-to-talk assistant
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Documents/Programming/glossy
+ExecStart=%h/Documents/Programming/glossy/venv/bin/python %h/Documents/Programming/glossy/ask.py
+Restart=on-failure
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
