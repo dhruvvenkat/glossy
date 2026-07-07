@@ -1,3 +1,6 @@
+ - IMPORTANT: if the wav file doesnt have any discernible sound signature (i.e. its just silence), don't waste API spend by sending it to gpt-whisper
+   --> need to have an early-exit flow for this 
+
  - threads: i.e. if i'm reading a chapter of a book i might want the bot to collect all of my questions as context and use it to aid its answers as i go deeper and increase in complexity
   --> context window
   --> need to figure out the optimal way of interacting with the bot (GUI, specific voice keywords like "new thread" or "explain thread"?)
