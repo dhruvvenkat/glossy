@@ -4,3 +4,8 @@
   --> how to store context - md/txt file in ~/.config?
 
  - smoother animation - right now it looks very crude, need to smoothen out the appearing/disappearing transition, round out the corners, make it less pixellated, more sensitive to changes in voice volume to actually make it look alive
+
+- figure out the optimal way of tracking API spend (shouldnt be spending more than a few bucks a month on this)
+
+- stretch goal: on-laptop transcription? will have to do an experiment to figure out whether gpt-whisper is better/worse than onboard transcription options
+  --> would greatly reduce time-to-response
