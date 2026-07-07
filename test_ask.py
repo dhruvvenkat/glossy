@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,6 +6,40 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
 import ask
+
+TEST_SETTINGS = {
+    "model": "test-model",
+    "reasoning_effort": "none",
+    "hold_seconds": 0.35,
+    "button": "KEY_RIGHTALT",
+}
+
+
+class ConfigTest(unittest.TestCase):
+    def test_loads_runtime_settings(self):
+        settings = {
+            "model": "gpt-5.5",
+            "reasoning_effort": "none",
+            "hold_seconds": 0.5,
+            "button": "KEY_HOME",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(settings))
+            self.assertEqual(ask.load_settings(path), settings)
+
+    def test_rejects_unknown_button(self):
+        settings = {
+            "model": "gpt-5.5",
+            "reasoning_effort": "none",
+            "hold_seconds": 0.5,
+            "button": "KEY_NOT_REAL",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(settings))
+            with self.assertRaisesRegex(RuntimeError, "evdev key name"):
+                ask.load_settings(path)
 
 
 class AnswerQuestionTest(unittest.TestCase):
@@ -21,7 +56,7 @@ class AnswerQuestionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "question.wav"
             audio.write_bytes(b"RIFF fake audio")
-            ask.answer_question(client, "test-model", audio)
+            ask.answer_question(client, TEST_SETTINGS, audio)
 
         transcription = client.audio.transcriptions.create.call_args.kwargs
         self.assertEqual(transcription["model"], "whisper-1")
@@ -29,6 +64,7 @@ class AnswerQuestionTest(unittest.TestCase):
             model="test-model",
             instructions=ask.SYSTEM_PROMPT,
             input="What is a mutex?",
+            reasoning={"effort": "none"},
         )
         speak.assert_called_once_with("A mutex permits one thread at a time.")
 
@@ -78,7 +114,7 @@ class InputDelayTest(unittest.TestCase):
             patch("ask.time.monotonic", side_effect=[0.0, 0.1]),
             self.assertRaises(KeyboardInterrupt),
         ):
-            ask.listen(Mock(), "test-model")
+            ask.listen(Mock(), TEST_SETTINGS)
 
         start_recording.assert_not_called()
         play_blip.assert_not_called()
@@ -106,10 +142,10 @@ class InputDelayTest(unittest.TestCase):
         with (
             patch("ask.find_keyboards", return_value=[keyboard]),
             patch("ask.select.select", side_effect=selections),
-            patch("ask.time.monotonic", side_effect=[0.0, ask.MIN_HOLD_SECONDS]),
+            patch("ask.time.monotonic", side_effect=[0.0, TEST_SETTINGS["hold_seconds"]]),
             self.assertRaises(KeyboardInterrupt),
         ):
-            ask.listen(Mock(), "test-model")
+            ask.listen(Mock(), TEST_SETTINGS)
 
         start_recording.assert_called_once()
         self.assertEqual(

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import json
+import math
 import os
 import select
 import signal
@@ -13,15 +15,46 @@ from evdev import InputDevice, ecodes, list_devices
 from openai import OpenAI
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
+CONFIG_FILE = Path(__file__).parent / "config.json"
 VOICE_DIR = Path(__file__).parent / "voices"
 START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
 STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
-MIN_HOLD_SECONDS = 1
 SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
 
 
-def load_config(path=ENV_FILE):
+def load_settings(path=CONFIG_FILE):
+    try:
+        settings = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Cannot load {path}: {error}") from error
+
+    expected = {"model", "reasoning_effort", "hold_seconds", "button"}
+    if not isinstance(settings, dict) or set(settings) != expected:
+        raise RuntimeError(f"{path} must contain exactly: {', '.join(sorted(expected))}")
+    if not isinstance(settings["model"], str) or not settings["model"].strip():
+        raise RuntimeError("model must be a non-empty string")
+    efforts = {None, "none", "low", "medium", "high", "xhigh"}
+    if settings["reasoning_effort"] not in efforts:
+        raise RuntimeError(
+            "reasoning_effort must be null, none, low, medium, high, or xhigh"
+        )
+    hold_seconds = settings["hold_seconds"]
+    if (
+        isinstance(hold_seconds, bool)
+        or not isinstance(hold_seconds, (int, float))
+        or not math.isfinite(hold_seconds)
+        or hold_seconds < 0
+    ):
+        raise RuntimeError("hold_seconds must be a non-negative number")
+    if not isinstance(settings["button"], str) or not isinstance(
+        getattr(ecodes, settings["button"], None), int
+    ):
+        raise RuntimeError("button must be a Linux evdev key name such as KEY_RIGHTALT")
+    return settings
+
+
+def load_environment(path=ENV_FILE):
     if path.exists():
         for raw_line in path.read_text().splitlines():
             line = raw_line.strip()
@@ -35,19 +68,17 @@ def load_config(path=ENV_FILE):
                 value = value[1:-1]
             os.environ.setdefault(key.strip(), value)
 
-    missing = [name for name in ("OPENAI_API_KEY", "GLOSSY_MODEL") if not os.getenv(name)]
-    if missing:
-        raise RuntimeError(f"Missing {', '.join(missing)} in {path}")
-    return os.environ["GLOSSY_MODEL"]
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError(f"Missing OPENAI_API_KEY in {path}")
 
 
-def find_keyboards():
+def find_keyboards(button_code, button_name):
     keyboards = []
     permission_denied = False
     for path in list_devices():
         try:
             device = InputDevice(path)
-            if ecodes.KEY_RIGHTALT in device.capabilities().get(ecodes.EV_KEY, []):
+            if button_code in device.capabilities().get(ecodes.EV_KEY, []):
                 keyboards.append(device)
             else:
                 device.close()
@@ -57,8 +88,8 @@ def find_keyboards():
     if not keyboards:
         reason = "permission denied" if permission_denied else "no keyboard found"
         raise RuntimeError(
-            f"Cannot listen for Right Alt ({reason}). Add this user to the input group "
-            "and log out and back in."
+            f"Cannot listen for {button_name} ({reason}). Add this user to the "
+            "input group and log out and back in."
         )
     return keyboards
 
@@ -128,7 +159,7 @@ def speak(text):
         speech_path.unlink(missing_ok=True)
 
 
-def answer_question(client, model, audio_path):
+def answer_question(client, settings, audio_path):
     with audio_path.open("rb") as audio:
         transcript = client.audio.transcriptions.create(
             model="whisper-1", file=audio
@@ -136,11 +167,14 @@ def answer_question(client, model, audio_path):
     if not transcript:
         raise RuntimeError("Whisper returned an empty transcript")
 
-    answer = client.responses.create(
-        model=model,
+    request = dict(
+        model=settings["model"],
         instructions=SYSTEM_PROMPT,
         input=transcript,
-    ).output_text.strip()
+    )
+    if settings["reasoning_effort"] is not None:
+        request["reasoning"] = {"effort": settings["reasoning_effort"]}
+    answer = client.responses.create(**request).output_text.strip()
     if not answer:
         raise RuntimeError("OpenAI returned an empty answer")
     speak(answer)
@@ -154,18 +188,21 @@ def report_error(error):
         pass
 
 
-def listen(client, model):
-    keyboards = find_keyboards()
+def listen(client, settings):
+    button_name = settings["button"]
+    button_code = getattr(ecodes, button_name)
+    keyboards = find_keyboards(button_code, button_name)
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
     recorder = None
     pressed_at = None
-    print("Glossy is listening for Right Alt.", flush=True)
+    print(f"Glossy is listening for {button_name}.", flush=True)
 
     try:
         while True:
             timeout = None
             if pressed_at is not None and recorder is None:
-                remaining = MIN_HOLD_SECONDS - (time.monotonic() - pressed_at)
+                held_for = time.monotonic() - pressed_at
+                remaining = settings["hold_seconds"] - held_for
                 if remaining <= 0:
                     play_blip(START_BLIP_SOUND)
                     recorder = start_recording(audio_path)
@@ -176,7 +213,7 @@ def listen(client, model):
             readable, _, _ = select.select(keyboards, [], [], timeout)
             for keyboard in readable:
                 for event in keyboard.read():
-                    if event.type != ecodes.EV_KEY or event.code != ecodes.KEY_RIGHTALT:
+                    if event.type != ecodes.EV_KEY or event.code != button_code:
                         continue
                     if event.value == 1 and pressed_at is None:
                         pressed_at = time.monotonic()
@@ -188,7 +225,7 @@ def listen(client, model):
                                 stop_recording(recorder, audio_path)
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
-                                answer_question(client, model, audio_path)
+                                answer_question(client, settings, audio_path)
                                 print("Ready.", flush=True)
                         except Exception as error:
                             report_error(error)
@@ -206,8 +243,8 @@ def listen(client, model):
 
 def main():
     try:
-        model = load_config()
-        listen(OpenAI(), model)
+        load_environment()
+        listen(OpenAI(), load_settings())
     except KeyboardInterrupt:
         pass
     except Exception as error:

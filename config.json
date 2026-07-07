@@ -1,0 +1,6 @@
+{
+  "model": "gpt-5.5",
+  "reasoning_effort": "medium",
+  "hold_seconds": 1.0,
+  "button": "KEY_RIGHTALT"
+}
