@@ -152,33 +152,40 @@ def listen(client, model):
     keyboards = find_keyboards()
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
     recorder = None
-    started_at = 0.0
+    pressed_at = None
     print("Glossy is listening for Right Alt.", flush=True)
 
     try:
         while True:
-            readable, _, _ = select.select(keyboards, [], [])
+            timeout = None
+            if pressed_at is not None and recorder is None:
+                remaining = MIN_HOLD_SECONDS - (time.monotonic() - pressed_at)
+                if remaining <= 0:
+                    recorder = start_recording(audio_path)
+                    print("Recording...", flush=True)
+                else:
+                    timeout = remaining
+
+            readable, _, _ = select.select(keyboards, [], [], timeout)
             for keyboard in readable:
                 for event in keyboard.read():
                     if event.type != ecodes.EV_KEY or event.code != ecodes.KEY_RIGHTALT:
                         continue
-                    if event.value == 1 and recorder is None:
-                        recorder = start_recording(audio_path)
-                        started_at = time.monotonic()
-                        print("Recording...", flush=True)
-                    elif event.value == 0 and recorder is not None:
-                        held_for = time.monotonic() - started_at
+                    if event.value == 1 and pressed_at is None:
+                        pressed_at = time.monotonic()
+                    elif event.value == 0 and pressed_at is not None:
                         try:
-                            stop_recording(recorder, audio_path)
-                            if held_for < MIN_HOLD_SECONDS:
+                            if recorder is None:
                                 print("Ignored short press.", flush=True)
                             else:
+                                stop_recording(recorder, audio_path)
                                 print("Answering...", flush=True)
                                 answer_question(client, model, audio_path)
                                 print("Ready.", flush=True)
                         except Exception as error:
                             report_error(error)
                         finally:
+                            pressed_at = None
                             recorder = None
                             audio_path.unlink(missing_ok=True)
     finally:

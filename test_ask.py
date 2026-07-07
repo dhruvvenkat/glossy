@@ -48,5 +48,53 @@ class AnswerQuestionTest(unittest.TestCase):
         self.assertEqual(player.args[0][0:2], ["aplay", "--quiet"])
 
 
+class InputDelayTest(unittest.TestCase):
+    @patch("builtins.print")
+    @patch("ask.start_recording")
+    def test_short_press_never_starts_recording(self, start_recording, _print):
+        keyboard = Mock()
+        keyboard.read.side_effect = [
+            [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=1)],
+            [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=0)],
+        ]
+        selections = [([keyboard], [], []), ([keyboard], [], []), KeyboardInterrupt]
+
+        with (
+            patch("ask.find_keyboards", return_value=[keyboard]),
+            patch("ask.select.select", side_effect=selections),
+            patch("ask.time.monotonic", side_effect=[0.0, 0.1]),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            ask.listen(Mock(), "test-model")
+
+        start_recording.assert_not_called()
+
+    @patch("builtins.print")
+    @patch("ask.answer_question")
+    @patch("ask.stop_recording")
+    @patch("ask.start_recording")
+    def test_recording_starts_after_threshold(
+        self, start_recording, stop_recording, answer_question, _print
+    ):
+        keyboard = Mock()
+        keyboard.read.side_effect = [
+            [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=1)],
+            [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=0)],
+        ]
+        selections = [([keyboard], [], []), ([keyboard], [], []), KeyboardInterrupt]
+
+        with (
+            patch("ask.find_keyboards", return_value=[keyboard]),
+            patch("ask.select.select", side_effect=selections),
+            patch("ask.time.monotonic", side_effect=[0.0, ask.MIN_HOLD_SECONDS]),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            ask.listen(Mock(), "test-model")
+
+        start_recording.assert_called_once()
+        stop_recording.assert_called_once()
+        answer_question.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
