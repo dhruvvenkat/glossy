@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import errno
 import json
 import math
 import os
@@ -21,6 +22,7 @@ VISUALIZER_SCRIPT = Path(__file__).parent / "visualizer.py"
 START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
 STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
+RECONNECT_SECONDS = 5
 SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
 
 
@@ -73,9 +75,8 @@ def load_environment(path=ENV_FILE):
         raise RuntimeError(f"Missing OPENAI_API_KEY in {path}")
 
 
-def find_keyboards(button_code, button_name):
+def find_keyboards(button_code):
     keyboards = []
-    permission_denied = False
     for path in list_devices():
         try:
             device = InputDevice(path)
@@ -83,16 +84,35 @@ def find_keyboards(button_code, button_name):
                 keyboards.append(device)
             else:
                 device.close()
-        except PermissionError:
-            permission_denied = True
-
-    if not keyboards:
-        reason = "permission denied" if permission_denied else "no keyboard found"
-        raise RuntimeError(
-            f"Cannot listen for {button_name} ({reason}). Add this user to the "
-            "input group and log out and back in."
-        )
+        except OSError:
+            pass
     return keyboards
+
+
+def wait_for_keyboards(button_code, button_name):
+    announced = False
+    while True:
+        keyboards = find_keyboards(button_code)
+        if keyboards:
+            return keyboards
+        if not announced:
+            print(
+                f"Glossy: no accessible keyboard supports {button_name}; "
+                f"checking every {RECONNECT_SECONDS} seconds.",
+                file=sys.stderr,
+                flush=True,
+            )
+            announced = True
+        time.sleep(RECONNECT_SECONDS)
+
+
+def keyboards_connected(keyboards):
+    try:
+        for keyboard in keyboards:
+            keyboard.active_keys()
+        return True
+    except OSError:
+        return False
 
 
 def start_recording(path):
@@ -203,10 +223,7 @@ def report_error(error):
         pass
 
 
-def listen(client, settings):
-    button_name = settings["button"]
-    button_code = getattr(ecodes, button_name)
-    keyboards = find_keyboards(button_code, button_name)
+def listen_connected(client, settings, keyboards, button_code, button_name):
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
     recorder = None
     visualizer = None
@@ -215,7 +232,7 @@ def listen(client, settings):
 
     try:
         while True:
-            timeout = None
+            timeout = RECONNECT_SECONDS
             if pressed_at is not None and recorder is None:
                 held_for = time.monotonic() - pressed_at
                 remaining = settings["hold_seconds"] - held_for
@@ -225,9 +242,11 @@ def listen(client, settings):
                     visualizer = start_visualizer(audio_path)
                     print("Recording...", flush=True)
                 else:
-                    timeout = remaining
+                    timeout = min(timeout, remaining)
 
             readable, _, _ = select.select(keyboards, [], [], timeout)
+            if not readable and not keyboards_connected(keyboards):
+                raise OSError(errno.ENODEV, "keyboard disconnected")
             for keyboard in readable:
                 for event in keyboard.read():
                     if event.type != ecodes.EV_KEY or event.code != button_code:
@@ -260,9 +279,31 @@ def listen(client, settings):
             stop_visualizer(visualizer)
         if recorder is not None and recorder.poll() is None:
             recorder.terminate()
+            try:
+                recorder.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                recorder.kill()
+                recorder.wait()
         audio_path.unlink(missing_ok=True)
         for keyboard in keyboards:
             keyboard.close()
+
+
+def listen(client, settings):
+    button_name = settings["button"]
+    button_code = getattr(ecodes, button_name)
+    while True:
+        keyboards = wait_for_keyboards(button_code, button_name)
+        try:
+            listen_connected(client, settings, keyboards, button_code, button_name)
+        except OSError as error:
+            if error.errno not in {errno.ENODEV, errno.EBADF}:
+                raise
+            print(
+                "Glossy: keyboard disconnected; waiting to reconnect.",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 def main():

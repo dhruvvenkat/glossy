@@ -1,3 +1,4 @@
+import errno
 import json
 import tempfile
 import unittest
@@ -106,6 +107,38 @@ class AnswerQuestionTest(unittest.TestCase):
 
 class InputDelayTest(unittest.TestCase):
     @patch("builtins.print")
+    @patch("ask.time.sleep")
+    @patch("ask.find_keyboards")
+    def test_waits_for_replacement_keyboard(self, find_keyboards, sleep, _print):
+        keyboard = Mock()
+        find_keyboards.side_effect = [[], [], [keyboard]]
+        self.assertEqual(ask.wait_for_keyboards(100, "KEY_RIGHTALT"), [keyboard])
+        self.assertEqual(sleep.call_count, 2)
+        sleep.assert_called_with(ask.RECONNECT_SECONDS)
+
+    def test_detects_disconnected_keyboard(self):
+        keyboard = Mock()
+        keyboard.active_keys.side_effect = OSError(errno.ENODEV, "gone")
+        self.assertFalse(ask.keyboards_connected([keyboard]))
+
+    @patch("builtins.print")
+    @patch("ask.listen_connected")
+    @patch("ask.wait_for_keyboards")
+    def test_reconnects_in_process(self, wait_for_keyboards, listen_connected, _print):
+        old_keyboard = Mock()
+        new_keyboard = Mock()
+        wait_for_keyboards.side_effect = [[old_keyboard], [new_keyboard]]
+        listen_connected.side_effect = [
+            OSError(errno.ENODEV, "gone"),
+            KeyboardInterrupt,
+        ]
+
+        with self.assertRaises(KeyboardInterrupt):
+            ask.listen(Mock(), TEST_SETTINGS)
+
+        self.assertEqual(wait_for_keyboards.call_count, 2)
+
+    @patch("builtins.print")
     @patch("ask.start_visualizer")
     @patch("ask.start_recording")
     @patch("ask.play_blip")
@@ -121,6 +154,7 @@ class InputDelayTest(unittest.TestCase):
 
         with (
             patch("ask.find_keyboards", return_value=[keyboard]),
+            patch("ask.keyboards_connected", return_value=True),
             patch("ask.select.select", side_effect=selections),
             patch("ask.time.monotonic", side_effect=[0.0, 0.1]),
             self.assertRaises(KeyboardInterrupt),
@@ -167,6 +201,7 @@ class InputDelayTest(unittest.TestCase):
 
         with (
             patch("ask.find_keyboards", return_value=[keyboard]),
+            patch("ask.keyboards_connected", return_value=True),
             patch("ask.select.select", side_effect=selections),
             patch("ask.time.monotonic", side_effect=[0.0, TEST_SETTINGS["hold_seconds"]]),
             self.assertRaises(KeyboardInterrupt),
