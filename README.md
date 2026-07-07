@@ -36,13 +36,14 @@ Runtime behavior lives in `config.json`:
   "model": "gpt-5.5",
   "reasoning_effort": "medium",
   "hold_seconds": 1.0,
-  "button": "KEY_RIGHTALT"
+  "button": "KEY_RIGHTALT",
+  "visualizer_sensitivity": 4.0
 }
 ```
 
 Use Linux evdev key names for `button`. Set `reasoning_effort` to `null` for
 models that do not support reasoning controls. Restart Glossy after editing the
-file.
+file. Raise `visualizer_sensitivity` if the recording bars move too little.
 
 Run Glossy in the foreground first:
 
