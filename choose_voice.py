@@ -39,7 +39,10 @@ def main():
     pending = VOICE_DIR / "selected.tmp"
     pending.write_text(choice + "\n")
     pending.replace(VOICE_DIR / "selected")
-    print(f"\nGlossy now uses {choice}.")
+    subprocess.run(
+        ["systemctl", "--user", "restart", "glossy.service"], check=True
+    )
+    print(f"\nGlossy restarted and now uses {choice}.")
 
 
 if __name__ == "__main__":

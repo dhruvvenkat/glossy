@@ -43,7 +43,7 @@ List the English Piper voices, type one of their names, and make it active with:
 venv/bin/python choose_voice.py
 ```
 
-The downloaded voice takes effect on the next answer without a restart.
+The utility downloads the voice, selects it, and restarts Glossy automatically.
 
 On GNOME, disable Caps Lock's normal typing behavior in GNOME Tweaks if you do
 not want each question to toggle capitalization. Glossy still receives the raw

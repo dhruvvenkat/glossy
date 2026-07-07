@@ -17,6 +17,7 @@ class ChooseVoiceTest(unittest.TestCase):
                 [], 0, "de_DE-thorsten-medium\nen_US-amy-medium\n", ""
             ),
             subprocess.CompletedProcess([], 0),
+            subprocess.CompletedProcess([], 0),
         ]
 
         with tempfile.TemporaryDirectory() as directory:
@@ -28,6 +29,10 @@ class ChooseVoiceTest(unittest.TestCase):
         download = run.call_args_list[1].args[0]
         self.assertIn("--download-dir", download)
         self.assertEqual(download[-1], "en_US-amy-medium")
+        self.assertEqual(
+            run.call_args_list[2].args[0],
+            ["systemctl", "--user", "restart", "glossy.service"],
+        )
 
 
 if __name__ == "__main__":
