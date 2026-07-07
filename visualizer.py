@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import math
+import re
+import subprocess
 import sys
 import tkinter as tk
 from array import array
@@ -10,6 +12,27 @@ WIDTH = 112
 HEIGHT = 44
 BACKGROUND = "#111827"
 BAR_COLOR = "#60a5fa"
+
+
+def primary_geometry(default_width, default_height):
+    try:
+        result = subprocess.run(
+            ["xrandr", "--listactivemonitors"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return 0, 0, default_width, default_height
+
+    for line in result.stdout.splitlines():
+        if "*" not in line:
+            continue
+        match = re.search(r"(\d+)/\d+x(\d+)/\d+([+-]\d+)([+-]\d+)", line)
+        if match:
+            width, height, x, y = map(int, match.groups())
+            return x, y, width, height
+    return 0, 0, default_width, default_height
 
 
 def audio_level(path):
@@ -37,8 +60,11 @@ def main(audio_path):
     root.overrideredirect(True)
     root.attributes("-topmost", True)
     root.attributes("-alpha", 0.92)
-    x = (root.winfo_screenwidth() - WIDTH) // 2
-    y = root.winfo_screenheight() - HEIGHT - 48
+    screen_x, screen_y, screen_width, screen_height = primary_geometry(
+        root.winfo_screenwidth(), root.winfo_screenheight()
+    )
+    x = screen_x + (screen_width - WIDTH) // 2
+    y = screen_y + screen_height - HEIGHT - 48
     root.geometry(f"{WIDTH}x{HEIGHT}+{x}+{y}")
 
     canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg=BACKGROUND, highlightthickness=0)
