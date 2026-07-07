@@ -2,8 +2,8 @@
 
 Hold Right Alt, ask a question, then release it. Glossy records the hold with
 `arecord`, transcribes it with OpenAI Whisper, asks the configured OpenAI model,
-and reads the answer with a local Piper neural voice. Holds shorter than 350 ms
-are ignored; after that threshold, a blip starts recording and a reversed blip
+and reads the answer with a local Piper neural voice. Holds shorter than the
+configured threshold are ignored; a blip starts recording and a reversed blip
 marks its end.
 
 ## Setup
@@ -24,11 +24,26 @@ Glossy reads this existing config file:
 ```sh
 # ~/.config/glossy.env
 OPENAI_API_KEY=your-key
-GLOSSY_MODEL=gpt-5.5
 ```
 
-Keep it private with `chmod 600 ~/.config/glossy.env`. Run Glossy in the
-foreground first:
+Keep it private with `chmod 600 ~/.config/glossy.env`.
+
+Runtime behavior lives in `config.json`:
+
+```json
+{
+  "model": "gpt-5.5",
+  "reasoning_effort": "medium",
+  "hold_seconds": 1.0,
+  "button": "KEY_RIGHTALT"
+}
+```
+
+Use Linux evdev key names for `button`. Set `reasoning_effort` to `null` for
+models that do not support reasoning controls. Restart Glossy after editing the
+file.
+
+Run Glossy in the foreground first:
 
 ```sh
 venv/bin/python ask.py
