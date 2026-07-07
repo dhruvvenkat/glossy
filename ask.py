@@ -15,7 +15,7 @@ from openai import OpenAI
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 VOICE_DIR = Path(__file__).parent / "voices"
 DEFAULT_VOICE = "en_US-lessac-medium"
-MIN_HOLD_SECONDS = 0.35
+MIN_HOLD_SECONDS = 1
 SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
 
 
