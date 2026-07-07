@@ -17,6 +17,7 @@ from openai import OpenAI
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 CONFIG_FILE = Path(__file__).parent / "config.json"
 VOICE_DIR = Path(__file__).parent / "voices"
+VISUALIZER_SCRIPT = Path(__file__).parent / "visualizer.py"
 START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
 STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
@@ -127,6 +128,20 @@ def stop_recording(recorder, path):
         raise RuntimeError(error.strip() or "No audio was recorded")
 
 
+def start_visualizer(audio_path):
+    return subprocess.Popen([sys.executable, str(VISUALIZER_SCRIPT), str(audio_path)])
+
+
+def stop_visualizer(visualizer):
+    if visualizer.poll() is None:
+        visualizer.terminate()
+        try:
+            visualizer.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            visualizer.kill()
+            visualizer.wait()
+
+
 def play_blip(sound):
     subprocess.run(["paplay", str(sound)], check=False)
 
@@ -194,6 +209,7 @@ def listen(client, settings):
     keyboards = find_keyboards(button_code, button_name)
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
     recorder = None
+    visualizer = None
     pressed_at = None
     print(f"Glossy is listening for {button_name}.", flush=True)
 
@@ -206,6 +222,7 @@ def listen(client, settings):
                 if remaining <= 0:
                     play_blip(START_BLIP_SOUND)
                     recorder = start_recording(audio_path)
+                    visualizer = start_visualizer(audio_path)
                     print("Recording...", flush=True)
                 else:
                     timeout = remaining
@@ -223,6 +240,8 @@ def listen(client, settings):
                                 print("Ignored short press.", flush=True)
                             else:
                                 stop_recording(recorder, audio_path)
+                                stop_visualizer(visualizer)
+                                visualizer = None
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
                                 answer_question(client, settings, audio_path)
@@ -230,10 +249,15 @@ def listen(client, settings):
                         except Exception as error:
                             report_error(error)
                         finally:
+                            if visualizer is not None:
+                                stop_visualizer(visualizer)
+                                visualizer = None
                             pressed_at = None
                             recorder = None
                             audio_path.unlink(missing_ok=True)
     finally:
+        if visualizer is not None:
+            stop_visualizer(visualizer)
         if recorder is not None and recorder.poll() is None:
             recorder.terminate()
         audio_path.unlink(missing_ok=True)

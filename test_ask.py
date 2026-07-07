@@ -95,12 +95,23 @@ class AnswerQuestionTest(unittest.TestCase):
             ],
         )
 
+    @patch("ask.subprocess.Popen")
+    def test_visualizer_uses_recording_file(self, popen):
+        audio = Path("question.wav")
+        ask.start_visualizer(audio)
+        popen.assert_called_once_with(
+            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio)]
+        )
+
 
 class InputDelayTest(unittest.TestCase):
     @patch("builtins.print")
+    @patch("ask.start_visualizer")
     @patch("ask.start_recording")
     @patch("ask.play_blip")
-    def test_short_press_never_starts_recording(self, play_blip, start_recording, _print):
+    def test_short_press_never_starts_recording(
+        self, play_blip, start_recording, start_visualizer, _print
+    ):
         keyboard = Mock()
         keyboard.read.side_effect = [
             [SimpleNamespace(type=ask.ecodes.EV_KEY, code=ask.ecodes.KEY_RIGHTALT, value=1)],
@@ -117,19 +128,34 @@ class InputDelayTest(unittest.TestCase):
             ask.listen(Mock(), TEST_SETTINGS)
 
         start_recording.assert_not_called()
+        start_visualizer.assert_not_called()
         play_blip.assert_not_called()
 
     @patch("builtins.print")
     @patch("ask.answer_question")
     @patch("ask.stop_recording")
+    @patch("ask.stop_visualizer")
+    @patch("ask.start_visualizer")
     @patch("ask.start_recording")
     @patch("ask.play_blip")
     def test_recording_starts_after_threshold(
-        self, play_blip, start_recording, stop_recording, answer_question, _print
+        self,
+        play_blip,
+        start_recording,
+        start_visualizer,
+        stop_visualizer,
+        stop_recording,
+        answer_question,
+        _print,
     ):
         order = []
+        visualizer = Mock()
         play_blip.side_effect = lambda sound: order.append(sound.name)
         start_recording.side_effect = lambda _path: order.append("record") or Mock()
+        start_visualizer.side_effect = (
+            lambda _path: order.append("visualizer-start") or visualizer
+        )
+        stop_visualizer.side_effect = lambda _process: order.append("visualizer-stop")
         stop_recording.side_effect = lambda *_args: order.append("stop")
         answer_question.side_effect = lambda *_args: order.append("answer")
         keyboard = Mock()
@@ -150,8 +176,17 @@ class InputDelayTest(unittest.TestCase):
         start_recording.assert_called_once()
         self.assertEqual(
             order,
-            ["blip.mp3", "record", "stop", "blip-reversed.mp3", "answer"],
+            [
+                "blip.mp3",
+                "record",
+                "visualizer-start",
+                "stop",
+                "visualizer-stop",
+                "blip-reversed.mp3",
+                "answer",
+            ],
         )
+        stop_visualizer.assert_called_once_with(visualizer)
         stop_recording.assert_called_once()
         answer_question.assert_called_once()
 
