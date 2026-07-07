@@ -1,6 +1,6 @@
 # Glossy
 
-Hold Caps Lock, ask a question, then release it. Glossy records the hold with
+Hold Right Alt, ask a question, then release it. Glossy records the hold with
 `arecord`, transcribes it with OpenAI Whisper, asks the configured OpenAI model,
 and reads the answer with a local Piper neural voice. Holds shorter than 350 ms
 are ignored.
@@ -44,10 +44,6 @@ venv/bin/python choose_voice.py
 ```
 
 The utility downloads the voice, selects it, and restarts Glossy automatically.
-
-On GNOME, disable Caps Lock's normal typing behavior in GNOME Tweaks if you do
-not want each question to toggle capitalization. Glossy still receives the raw
-physical key event.
 
 ## Start automatically
 

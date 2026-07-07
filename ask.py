@@ -45,7 +45,7 @@ def find_keyboards():
     for path in list_devices():
         try:
             device = InputDevice(path)
-            if ecodes.KEY_HOME in device.capabilities().get(ecodes.EV_KEY, []):
+            if ecodes.KEY_RIGHTALT in device.capabilities().get(ecodes.EV_KEY, []):
                 keyboards.append(device)
             else:
                 device.close()
@@ -55,7 +55,7 @@ def find_keyboards():
     if not keyboards:
         reason = "permission denied" if permission_denied else "no keyboard found"
         raise RuntimeError(
-            f"Cannot listen for Caps Lock ({reason}). Add this user to the input group "
+            f"Cannot listen for Right Alt ({reason}). Add this user to the input group "
             "and log out and back in."
         )
     return keyboards
@@ -153,14 +153,14 @@ def listen(client, model):
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
     recorder = None
     started_at = 0.0
-    print("Glossy is listening for Caps Lock.", flush=True)
+    print("Glossy is listening for Right Alt.", flush=True)
 
     try:
         while True:
             readable, _, _ = select.select(keyboards, [], [])
             for keyboard in readable:
                 for event in keyboard.read():
-                    if event.type != ecodes.EV_KEY or event.code != ecodes.KEY_HOME:
+                    if event.type != ecodes.EV_KEY or event.code != ecodes.KEY_RIGHTALT:
                         continue
                     if event.value == 1 and recorder is None:
                         recorder = start_recording(audio_path)
