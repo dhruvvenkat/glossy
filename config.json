@@ -2,5 +2,6 @@
   "model": "gpt-5.4-mini",
   "reasoning_effort": "none",
   "hold_seconds": 1.0,
-  "button": "KEY_RIGHTALT"
+  "button": "KEY_RIGHTALT",
+  "visualizer_sensitivity": 4.0
 }

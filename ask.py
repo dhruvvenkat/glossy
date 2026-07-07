@@ -32,7 +32,13 @@ def load_settings(path=CONFIG_FILE):
     except (OSError, json.JSONDecodeError) as error:
         raise RuntimeError(f"Cannot load {path}: {error}") from error
 
-    expected = {"model", "reasoning_effort", "hold_seconds", "button"}
+    expected = {
+        "model",
+        "reasoning_effort",
+        "hold_seconds",
+        "button",
+        "visualizer_sensitivity",
+    }
     if not isinstance(settings, dict) or set(settings) != expected:
         raise RuntimeError(f"{path} must contain exactly: {', '.join(sorted(expected))}")
     if not isinstance(settings["model"], str) or not settings["model"].strip():
@@ -54,6 +60,14 @@ def load_settings(path=CONFIG_FILE):
         getattr(ecodes, settings["button"], None), int
     ):
         raise RuntimeError("button must be a Linux evdev key name such as KEY_RIGHTALT")
+    sensitivity = settings["visualizer_sensitivity"]
+    if (
+        isinstance(sensitivity, bool)
+        or not isinstance(sensitivity, (int, float))
+        or not math.isfinite(sensitivity)
+        or sensitivity <= 0
+    ):
+        raise RuntimeError("visualizer_sensitivity must be a positive number")
     return settings
 
 
@@ -148,8 +162,10 @@ def stop_recording(recorder, path):
         raise RuntimeError(error.strip() or "No audio was recorded")
 
 
-def start_visualizer(audio_path):
-    return subprocess.Popen([sys.executable, str(VISUALIZER_SCRIPT), str(audio_path)])
+def start_visualizer(audio_path, sensitivity):
+    return subprocess.Popen(
+        [sys.executable, str(VISUALIZER_SCRIPT), str(audio_path), str(sensitivity)]
+    )
 
 
 def stop_visualizer(visualizer):
@@ -239,7 +255,9 @@ def listen_connected(client, settings, keyboards, button_code, button_name):
                 if remaining <= 0:
                     play_blip(START_BLIP_SOUND)
                     recorder = start_recording(audio_path)
-                    visualizer = start_visualizer(audio_path)
+                    visualizer = start_visualizer(
+                        audio_path, settings["visualizer_sensitivity"]
+                    )
                     print("Recording...", flush=True)
                 else:
                     timeout = min(timeout, remaining)

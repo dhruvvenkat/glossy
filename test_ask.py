@@ -13,6 +13,7 @@ TEST_SETTINGS = {
     "reasoning_effort": "none",
     "hold_seconds": 0.35,
     "button": "KEY_RIGHTALT",
+    "visualizer_sensitivity": 4.0,
 }
 
 
@@ -23,6 +24,7 @@ class ConfigTest(unittest.TestCase):
             "reasoning_effort": "none",
             "hold_seconds": 0.5,
             "button": "KEY_HOME",
+            "visualizer_sensitivity": 4.0,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -35,6 +37,7 @@ class ConfigTest(unittest.TestCase):
             "reasoning_effort": "none",
             "hold_seconds": 0.5,
             "button": "KEY_NOT_REAL",
+            "visualizer_sensitivity": 4.0,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -99,9 +102,9 @@ class AnswerQuestionTest(unittest.TestCase):
     @patch("ask.subprocess.Popen")
     def test_visualizer_uses_recording_file(self, popen):
         audio = Path("question.wav")
-        ask.start_visualizer(audio)
+        ask.start_visualizer(audio, 4.0)
         popen.assert_called_once_with(
-            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio)]
+            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio), "4.0"]
         )
 
 
@@ -187,7 +190,7 @@ class InputDelayTest(unittest.TestCase):
         play_blip.side_effect = lambda sound: order.append(sound.name)
         start_recording.side_effect = lambda _path: order.append("record") or Mock()
         start_visualizer.side_effect = (
-            lambda _path: order.append("visualizer-start") or visualizer
+            lambda _path, _sensitivity: order.append("visualizer-start") or visualizer
         )
         stop_visualizer.side_effect = lambda _process: order.append("visualizer-stop")
         stop_recording.side_effect = lambda *_args: order.append("stop")

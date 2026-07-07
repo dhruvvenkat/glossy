@@ -35,7 +35,7 @@ def primary_geometry(default_width, default_height):
     return 0, 0, default_width, default_height
 
 
-def audio_level(path):
+def audio_level(path, sensitivity=1.0):
     try:
         size = path.stat().st_size
         with path.open("rb") as audio:
@@ -52,10 +52,10 @@ def audio_level(path):
     if sys.byteorder != "little":
         samples.byteswap()
     rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
-    return min(1.0, rms / 6000)
+    return min(1.0, rms / 6000 * sensitivity)
 
 
-def main(audio_path):
+def main(audio_path, sensitivity):
     root = tk.Tk()
     root.overrideredirect(True)
     root.attributes("-topmost", True)
@@ -78,7 +78,7 @@ def main(audio_path):
 
     def animate():
         nonlocal smoothed, phase
-        smoothed = smoothed * 0.6 + audio_level(audio_path) * 0.4
+        smoothed = smoothed * 0.6 + audio_level(audio_path, sensitivity) * 0.4
         phase += 0.55
         for index, bar in enumerate(bars):
             movement = 0.75 + 0.25 * math.sin(phase + index * 0.9)
@@ -92,6 +92,6 @@ def main(audio_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: visualizer.py AUDIO_FILE")
-    main(Path(sys.argv[1]))
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: visualizer.py AUDIO_FILE SENSITIVITY")
+    main(Path(sys.argv[1]), float(sys.argv[2]))

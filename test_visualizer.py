@@ -21,6 +21,7 @@ class AudioLevelTest(unittest.TestCase):
             audio = Path(directory) / "recording.wav"
             audio.write_bytes(b"\0" * 44 + array("h", [3000, -3000] * 100).tobytes())
             self.assertAlmostEqual(audio_level(audio), 0.5)
+            self.assertEqual(audio_level(audio, sensitivity=2), 1.0)
 
     def test_missing_audio_is_silent(self):
         self.assertEqual(audio_level(Path("missing.wav")), 0.0)
