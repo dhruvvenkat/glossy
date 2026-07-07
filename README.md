@@ -62,6 +62,10 @@ venv/bin/python choose_voice.py
 
 The utility downloads the voice, selects it, and restarts Glossy automatically.
 
+Glossy checks its keyboard connection every five seconds. After suspend or a
+keyboard swap, it waits quietly and reconnects as soon as a compatible keyboard
+appears; systemd remains the crash-recovery fallback.
+
 ## Start automatically
 
 The included unit assumes this repository remains at
