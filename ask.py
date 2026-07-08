@@ -31,7 +31,7 @@ START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
 STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
 RECONNECT_SECONDS = 5
-TRANSCRIPT_PREVIEW_SECONDS = 1
+TRANSCRIPT_PREVIEW_SECONDS = 0.25
 SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
 
 
@@ -307,6 +307,9 @@ def transcribe_audio(transcriber, settings, audio_path):
         str(audio_path),
         language="en",
         beam_size=settings["transcription_beam_size"],
+        best_of=1,
+        temperature=0.0,
+        without_timestamps=True,
     )
     return "".join(segment.text for segment in segments).strip()
 
@@ -314,8 +317,9 @@ def transcribe_audio(transcriber, settings, audio_path):
 def stream_transcript(transcriber, settings, audio_path, stopped):
     preview_path = Path(tempfile.gettempdir()) / f"glossy-preview-{os.getpid()}.wav"
     previous = ""
+    line_width = 0
     try:
-        # ponytail: re-transcribes the growing clip; use streaming ASR for long holds.
+        # ponytail: re-transcribes the growing clip; use streaming ASR if this lags.
         while not stopped.wait(TRANSCRIPT_PREVIEW_SECONDS):
             try:
                 data = audio_path.read_bytes()
@@ -335,9 +339,13 @@ def stream_transcript(transcriber, settings, audio_path, stopped):
                 )
                 return
             if transcript and transcript != previous:
-                print(f"Glossy heard: {transcript}", flush=True)
+                line = f"\rGlossy heard: {transcript}"
+                print(line + " " * max(0, line_width - len(line)), end="", flush=True)
+                line_width = len(line)
                 previous = transcript
     finally:
+        if previous:
+            print(flush=True)
         preview_path.unlink(missing_ok=True)
 
 

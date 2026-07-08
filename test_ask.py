@@ -87,7 +87,12 @@ class AnswerQuestionTest(unittest.TestCase):
             ask.answer_question(client, transcriber, TEST_SETTINGS, audio)
 
         transcriber.transcribe.assert_called_once_with(
-            str(audio), language="en", beam_size=1
+            str(audio),
+            language="en",
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
+            without_timestamps=True,
         )
         client.responses.create.assert_called_once_with(
             model="test-model",
@@ -114,8 +119,11 @@ class AnswerQuestionTest(unittest.TestCase):
                 recording.writeframes(array("h", [1000, -1000] * 1600).tobytes())
             ask.stream_transcript(transcriber, TEST_SETTINGS, audio, stopped)
 
-        output.assert_called_once_with(
-            "Glossy heard: What is a mutex?", flush=True
+        output.assert_has_calls(
+            [
+                call("\rGlossy heard: What is a mutex?", end="", flush=True),
+                call(flush=True),
+            ]
         )
 
     @patch("builtins.print")
