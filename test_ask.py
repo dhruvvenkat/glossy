@@ -13,6 +13,8 @@ import ask
 TEST_SETTINGS = {
     "model": "test-model",
     "reasoning_effort": "none",
+    "transcription_model": "small.en",
+    "transcription_beam_size": 1,
     "hold_seconds": 0.35,
     "button": "KEY_RIGHTALT",
     "visualizer_sensitivity": 4.0,
@@ -28,6 +30,8 @@ class ConfigTest(unittest.TestCase):
         settings = {
             "model": "gpt-5.5",
             "reasoning_effort": "none",
+            "transcription_model": "small.en",
+            "transcription_beam_size": 1,
             "hold_seconds": 0.5,
             "button": "KEY_HOME",
             "visualizer_sensitivity": 4.0,
@@ -45,6 +49,8 @@ class ConfigTest(unittest.TestCase):
         settings = {
             "model": "gpt-5.5",
             "reasoning_effort": "none",
+            "transcription_model": "small.en",
+            "transcription_beam_size": 1,
             "hold_seconds": 0.5,
             "button": "KEY_NOT_REAL",
             "visualizer_sensitivity": 4.0,
@@ -65,8 +71,10 @@ class AnswerQuestionTest(unittest.TestCase):
     @patch("ask.speak")
     def test_transcribes_answers_and_speaks(self, speak, _has_speech):
         client = Mock()
-        client.audio.transcriptions.create.return_value = SimpleNamespace(
-            text="What is a mutex?"
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="What is a mutex?")],
+            SimpleNamespace(),
         )
         client.responses.create.return_value = SimpleNamespace(
             output_text="A mutex permits one thread at a time."
@@ -75,10 +83,11 @@ class AnswerQuestionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "question.wav"
             audio.write_bytes(b"RIFF fake audio")
-            ask.answer_question(client, TEST_SETTINGS, audio)
+            ask.answer_question(client, transcriber, TEST_SETTINGS, audio)
 
-        transcription = client.audio.transcriptions.create.call_args.kwargs
-        self.assertEqual(transcription["model"], "whisper-1")
+        transcriber.transcribe.assert_called_once_with(
+            str(audio), language="en", beam_size=1
+        )
         client.responses.create.assert_called_once_with(
             model="test-model",
             instructions=ask.SYSTEM_PROMPT,
@@ -90,14 +99,18 @@ class AnswerQuestionTest(unittest.TestCase):
     @patch("builtins.print")
     def test_silence_never_reaches_openai(self, _print):
         client = Mock()
+        transcriber = Mock()
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "silence.wav"
             with wave.open(str(audio), "wb") as output:
                 output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
                 output.writeframes(array("h", [0] * 16000).tobytes())
-            self.assertFalse(ask.answer_question(client, TEST_SETTINGS, audio))
+            self.assertFalse(
+                ask.answer_question(client, transcriber, TEST_SETTINGS, audio)
+            )
 
-        client.audio.transcriptions.create.assert_not_called()
+        transcriber.transcribe.assert_not_called()
+        client.responses.create.assert_not_called()
 
     @patch("ask.webrtcvad.Vad")
     @patch("builtins.print")
@@ -188,7 +201,7 @@ class InputDelayTest(unittest.TestCase):
         ]
 
         with self.assertRaises(KeyboardInterrupt):
-            ask.listen(Mock(), TEST_SETTINGS)
+            ask.listen(Mock(), Mock(), TEST_SETTINGS)
 
         self.assertEqual(wait_for_keyboards.call_count, 2)
 
@@ -213,7 +226,7 @@ class InputDelayTest(unittest.TestCase):
             patch("ask.time.monotonic", side_effect=[0.0, 0.1]),
             self.assertRaises(KeyboardInterrupt),
         ):
-            ask.listen(Mock(), TEST_SETTINGS)
+            ask.listen(Mock(), Mock(), TEST_SETTINGS)
 
         start_recording.assert_not_called()
         start_visualizer.assert_not_called()
@@ -260,7 +273,7 @@ class InputDelayTest(unittest.TestCase):
             patch("ask.time.monotonic", side_effect=[0.0, TEST_SETTINGS["hold_seconds"]]),
             self.assertRaises(KeyboardInterrupt),
         ):
-            ask.listen(Mock(), TEST_SETTINGS)
+            ask.listen(Mock(), Mock(), TEST_SETTINGS)
 
         start_recording.assert_called_once()
         self.assertEqual(

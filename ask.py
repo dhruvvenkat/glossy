@@ -14,7 +14,11 @@ import wave
 from array import array
 from pathlib import Path
 
+MODEL_DIR = Path(__file__).parent / "models"
+os.environ["HF_HOME"] = str(MODEL_DIR / ".cache")
+
 from evdev import InputDevice, ecodes, list_devices
+from faster_whisper import WhisperModel
 from openai import OpenAI
 import webrtcvad
 
@@ -38,6 +42,8 @@ def load_settings(path=CONFIG_FILE):
     expected = {
         "model",
         "reasoning_effort",
+        "transcription_model",
+        "transcription_beam_size",
         "hold_seconds",
         "button",
         "visualizer_sensitivity",
@@ -55,6 +61,14 @@ def load_settings(path=CONFIG_FILE):
         raise RuntimeError(
             "reasoning_effort must be null, none, low, medium, high, or xhigh"
         )
+    if (
+        not isinstance(settings["transcription_model"], str)
+        or not settings["transcription_model"].strip()
+    ):
+        raise RuntimeError("transcription_model must be a non-empty string")
+    beam_size = settings["transcription_beam_size"]
+    if isinstance(beam_size, bool) or not isinstance(beam_size, int) or beam_size < 1:
+        raise RuntimeError("transcription_beam_size must be a positive integer")
     hold_seconds = settings["hold_seconds"]
     if (
         isinstance(hold_seconds, bool)
@@ -244,6 +258,9 @@ def speak(text):
         speech_path.unlink(missing_ok=True)
 
 
+# path to differentiate background noise (ex. if the user accidentally holds down the button) from actual voice
+# continuing to edit
+# TODO: add a feature to end the recording after an extended period of time (45-secs to one minute) but make it configurable in json
 def has_speech(path, rms_threshold, minimum_seconds, aggressiveness, snr_ratio):
     with wave.open(str(path), "rb") as audio:
         if audio.getnchannels() != 1 or audio.getsampwidth() != 2:
@@ -283,7 +300,7 @@ def has_speech(path, rms_threshold, minimum_seconds, aggressiveness, snr_ratio):
     return longest_run >= required_windows
 
 
-def answer_question(client, settings, audio_path):
+def answer_question(client, transcriber, settings, audio_path):
     if not has_speech(
         audio_path,
         settings["speech_rms_threshold"],
@@ -294,12 +311,14 @@ def answer_question(client, settings, audio_path):
         print("Glossy: no speech detected; skipped OpenAI.", flush=True)
         return False
 
-    with audio_path.open("rb") as audio:
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1", file=audio
-        ).text.strip()
+    segments, _ = transcriber.transcribe(
+        str(audio_path),
+        language="en",
+        beam_size=settings["transcription_beam_size"],
+    )
+    transcript = "".join(segment.text for segment in segments).strip()
     if not transcript:
-        raise RuntimeError("Whisper returned an empty transcript")
+        raise RuntimeError("Local Whisper returned an empty transcript")
 
     request = dict(
         model=settings["model"],
@@ -323,7 +342,9 @@ def report_error(error):
         pass
 
 
-def listen_connected(client, settings, keyboards, button_code, button_name):
+def listen_connected(
+    client, transcriber, settings, keyboards, button_code, button_name
+):
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
     recorder = None
     visualizer = None
@@ -365,7 +386,9 @@ def listen_connected(client, settings, keyboards, button_code, button_name):
                                 visualizer = None
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
-                                answer_question(client, settings, audio_path)
+                                answer_question(
+                                    client, transcriber, settings, audio_path
+                                )
                                 print("Ready.", flush=True)
                         except Exception as error:
                             report_error(error)
@@ -391,13 +414,15 @@ def listen_connected(client, settings, keyboards, button_code, button_name):
             keyboard.close()
 
 
-def listen(client, settings):
+def listen(client, transcriber, settings):
     button_name = settings["button"]
     button_code = getattr(ecodes, button_name)
     while True:
         keyboards = wait_for_keyboards(button_code, button_name)
         try:
-            listen_connected(client, settings, keyboards, button_code, button_name)
+            listen_connected(
+                client, transcriber, settings, keyboards, button_code, button_name
+            )
         except OSError as error:
             if error.errno not in {errno.ENODEV, errno.EBADF}:
                 raise
@@ -411,7 +436,14 @@ def listen(client, settings):
 def main():
     try:
         load_environment()
-        listen(OpenAI(), load_settings())
+        settings = load_settings()
+        transcriber = WhisperModel(
+            settings["transcription_model"],
+            device="cpu",
+            compute_type="int8",
+            download_root=str(MODEL_DIR),
+        )
+        listen(OpenAI(), transcriber, settings)
     except KeyboardInterrupt:
         pass
     except Exception as error:
