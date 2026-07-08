@@ -61,9 +61,10 @@ class ConfigTest(unittest.TestCase):
 
 
 class AnswerQuestionTest(unittest.TestCase):
+    @patch("builtins.print")
     @patch("ask.has_speech", return_value=True)
     @patch("ask.speak")
-    def test_transcribes_answers_and_speaks(self, speak, _has_speech):
+    def test_transcribes_answers_and_speaks(self, speak, _has_speech, output):
         client = Mock()
         client.audio.transcriptions.create.return_value = SimpleNamespace(
             text="What is a mutex?"
@@ -86,6 +87,7 @@ class AnswerQuestionTest(unittest.TestCase):
             reasoning={"effort": "none"},
         )
         speak.assert_called_once_with("A mutex permits one thread at a time.")
+        output.assert_called_once_with("Glossy transcript: 'What is a mutex?'", flush=True)
 
     @patch("builtins.print")
     def test_silence_never_reaches_openai(self, _print):

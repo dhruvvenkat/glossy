@@ -298,6 +298,7 @@ def answer_question(client, settings, audio_path):
         transcript = client.audio.transcriptions.create(
             model="whisper-1", file=audio
         ).text.strip()
+    print(f"Glossy transcript: {transcript!r}", flush=True)
     if not transcript:
         raise RuntimeError("Whisper returned an empty transcript")
 
