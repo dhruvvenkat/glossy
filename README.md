@@ -4,7 +4,7 @@ Hold Right Alt, ask a question, then release it. Glossy records the hold with
 `arecord`, transcribes it locally with Whisper, asks the configured OpenAI model,
 and reads the answer with a local Piper neural voice. Holds shorter than the
 configured threshold are ignored; a blip starts recording and a reversed blip
-marks its end. While recording, partial transcripts print to the terminal and a
+marks its end. While recording, the live transcript refreshes in the terminal and a
 small voice-reactive indicator appears at the bottom-center of the screen.
 
 ## Setup
@@ -52,7 +52,8 @@ models that do not support reasoning controls. Restart Glossy after editing the
 file. `transcription_model` controls the local Whisper size; `small.en` is the
 default accuracy/latency balance for English on CPU. Raise
 `transcription_beam_size` for potentially better transcription at the cost of
-latency. The model downloads on first startup and then runs locally. Raise
+latency. Use `base.en` or `tiny.en` if live terminal dictation lags. The model
+downloads on first startup and then runs locally. Raise
 `visualizer_sensitivity` if the recording bars move too little. Downloaded
 models are kept in the repository's ignored `models/` directory.
 Raise `speech_rms_threshold` if background noise is being uploaded; lower it if
