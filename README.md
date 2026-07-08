@@ -39,8 +39,9 @@ Runtime behavior lives in `config.json`:
   "button": "KEY_RIGHTALT",
   "visualizer_sensitivity": 4.0,
   "speech_rms_threshold": 300,
-  "minimum_speech_seconds": 0.15,
-  "vad_aggressiveness": 3
+  "minimum_speech_seconds": 0.3,
+  "vad_aggressiveness": 3,
+  "speech_snr_ratio": 2.0
 }
 ```
 
@@ -51,7 +52,8 @@ Raise `speech_rms_threshold` if background noise is being uploaded; lower it if
 quiet speech is skipped. Recordings need at least `minimum_speech_seconds` above
 that threshold and classified as speech by the local WebRTC detector before
 Glossy contacts OpenAI. `vad_aggressiveness` ranges from `0` to `3`; higher
-values reject more non-speech noise.
+values reject more non-speech noise. `speech_snr_ratio` requires speech to be
+louder than the noise measured at the start of each recording.
 
 Run Glossy in the foreground first:
 
