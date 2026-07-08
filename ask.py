@@ -44,6 +44,7 @@ def load_settings(path=CONFIG_FILE):
         "speech_rms_threshold",
         "minimum_speech_seconds",
         "vad_aggressiveness",
+        "speech_snr_ratio",
     }
     if not isinstance(settings, dict) or set(settings) != expected:
         raise RuntimeError(f"{path} must contain exactly: {', '.join(sorted(expected))}")
@@ -93,6 +94,14 @@ def load_settings(path=CONFIG_FILE):
     aggressiveness = settings["vad_aggressiveness"]
     if isinstance(aggressiveness, bool) or aggressiveness not in range(4):
         raise RuntimeError("vad_aggressiveness must be an integer from 0 to 3")
+    snr_ratio = settings["speech_snr_ratio"]
+    if (
+        isinstance(snr_ratio, bool)
+        or not isinstance(snr_ratio, (int, float))
+        or not math.isfinite(snr_ratio)
+        or snr_ratio <= 1
+    ):
+        raise RuntimeError("speech_snr_ratio must be a number greater than 1")
     return settings
 
 
@@ -235,7 +244,7 @@ def speak(text):
         speech_path.unlink(missing_ok=True)
 
 
-def has_speech(path, rms_threshold, minimum_seconds, aggressiveness):
+def has_speech(path, rms_threshold, minimum_seconds, aggressiveness, snr_ratio):
     with wave.open(str(path), "rb") as audio:
         if audio.getnchannels() != 1 or audio.getsampwidth() != 2:
             raise RuntimeError("Expected 16-bit mono recording")
@@ -244,19 +253,34 @@ def has_speech(path, rms_threshold, minimum_seconds, aggressiveness):
             raise RuntimeError("WebRTC VAD requires an 8, 16, 32, or 48 kHz recording")
         frames_per_window = sample_rate * 30 // 1000
         required_windows = max(1, math.ceil(minimum_seconds / 0.03))
-        loud_windows = 0
         vad = webrtcvad.Vad(aggressiveness)
+        windows = []
         while len(data := audio.readframes(frames_per_window)) == frames_per_window * 2:
             samples = array("h")
             samples.frombytes(data)
             if sys.byteorder != "little":
                 samples.byteswap()
             rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
-            if rms >= rms_threshold and vad.is_speech(data, sample_rate):
-                loud_windows += 1
-                if loud_windows >= required_windows:
-                    return True
-    return False
+            windows.append((rms, vad.is_speech(data, sample_rate)))
+
+    calibration_windows = min(5, len(windows))
+    noise_rms = (
+        sum(rms for rms, _ in windows[:calibration_windows]) / calibration_windows
+        if calibration_windows
+        else 0
+    )
+    effective_threshold = max(rms_threshold, noise_rms * snr_ratio)
+    longest_run = current_run = 0
+    for rms, is_voice in windows[calibration_windows:]:
+        current_run = current_run + 1 if is_voice and rms >= effective_threshold else 0
+        longest_run = max(longest_run, current_run)
+
+    print(
+        f"Glossy: local VAD noise={noise_rms:.0f}, threshold={effective_threshold:.0f}, "
+        f"longest_speech={longest_run * 30}ms.",
+        flush=True,
+    )
+    return longest_run >= required_windows
 
 
 def answer_question(client, settings, audio_path):
@@ -265,6 +289,7 @@ def answer_question(client, settings, audio_path):
         settings["speech_rms_threshold"],
         settings["minimum_speech_seconds"],
         settings["vad_aggressiveness"],
+        settings["speech_snr_ratio"],
     ):
         print("Glossy: no speech detected; skipped OpenAI.", flush=True)
         return False

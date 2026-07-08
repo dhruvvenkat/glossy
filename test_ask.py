@@ -17,8 +17,9 @@ TEST_SETTINGS = {
     "button": "KEY_RIGHTALT",
     "visualizer_sensitivity": 4.0,
     "speech_rms_threshold": 300,
-    "minimum_speech_seconds": 0.15,
+    "minimum_speech_seconds": 0.3,
     "vad_aggressiveness": 3,
+    "speech_snr_ratio": 2.0,
 }
 
 
@@ -31,8 +32,9 @@ class ConfigTest(unittest.TestCase):
             "button": "KEY_HOME",
             "visualizer_sensitivity": 4.0,
             "speech_rms_threshold": 300,
-            "minimum_speech_seconds": 0.15,
+            "minimum_speech_seconds": 0.3,
             "vad_aggressiveness": 3,
+            "speech_snr_ratio": 2.0,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -47,8 +49,9 @@ class ConfigTest(unittest.TestCase):
             "button": "KEY_NOT_REAL",
             "visualizer_sensitivity": 4.0,
             "speech_rms_threshold": 300,
-            "minimum_speech_seconds": 0.15,
+            "minimum_speech_seconds": 0.3,
             "vad_aggressiveness": 3,
+            "speech_snr_ratio": 2.0,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -97,15 +100,28 @@ class AnswerQuestionTest(unittest.TestCase):
         client.audio.transcriptions.create.assert_not_called()
 
     @patch("ask.webrtcvad.Vad")
-    def test_detects_sustained_local_audio(self, vad):
+    @patch("builtins.print")
+    def test_detects_sustained_local_audio(self, _print, vad):
         vad.return_value.is_speech.return_value = True
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "voice.wav"
             with wave.open(str(audio), "wb") as output:
                 output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
-                output.writeframes(array("h", [1000, -1000] * 1600).tobytes())
-            self.assertTrue(ask.has_speech(audio, 300, 0.15, 3))
+                samples = [0] * 2400 + [1000, -1000] * 2400
+                output.writeframes(array("h", samples).tobytes())
+            self.assertTrue(ask.has_speech(audio, 300, 0.3, 3, 2.0))
         vad.assert_called_once_with(3)
+
+    @patch("ask.webrtcvad.Vad")
+    @patch("builtins.print")
+    def test_rejects_continuous_noise(self, _print, vad):
+        vad.return_value.is_speech.return_value = True
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "noise.wav"
+            with wave.open(str(audio), "wb") as output:
+                output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                output.writeframes(array("h", [1000, -1000] * 8000).tobytes())
+            self.assertFalse(ask.has_speech(audio, 300, 0.3, 3, 2.0))
 
     @patch("ask.subprocess.run")
     def test_speak_uses_piper_then_aplay(self, run):
