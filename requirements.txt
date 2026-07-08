@@ -1,3 +1,4 @@
 evdev==1.9.3
 openai==2.44.0
 piper-tts==1.4.2
+webrtcvad-wheels==2.0.14
