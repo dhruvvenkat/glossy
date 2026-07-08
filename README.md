@@ -4,8 +4,8 @@ Hold Right Alt, ask a question, then release it. Glossy records the hold with
 `arecord`, transcribes it locally with Whisper, asks the configured OpenAI model,
 and reads the answer with a local Piper neural voice. Holds shorter than the
 configured threshold are ignored; a blip starts recording and a reversed blip
-marks its end. While recording, a small voice-reactive indicator appears at the
-bottom-center of the screen.
+marks its end. While recording, partial transcripts print to the terminal and a
+small voice-reactive indicator appears at the bottom-center of the screen.
 
 ## Setup
 

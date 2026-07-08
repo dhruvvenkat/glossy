@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
 from array import array
@@ -30,6 +31,7 @@ START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
 STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
 RECONNECT_SECONDS = 5
+TRANSCRIPT_PREVIEW_SECONDS = 1
 SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
 
 
@@ -300,6 +302,62 @@ def has_speech(path, rms_threshold, minimum_seconds, aggressiveness, snr_ratio):
     return longest_run >= required_windows
 
 
+def transcribe_audio(transcriber, settings, audio_path):
+    segments, _ = transcriber.transcribe(
+        str(audio_path),
+        language="en",
+        beam_size=settings["transcription_beam_size"],
+    )
+    return "".join(segment.text for segment in segments).strip()
+
+
+def stream_transcript(transcriber, settings, audio_path, stopped):
+    preview_path = Path(tempfile.gettempdir()) / f"glossy-preview-{os.getpid()}.wav"
+    previous = ""
+    try:
+        # ponytail: re-transcribes the growing clip; use streaming ASR for long holds.
+        while not stopped.wait(TRANSCRIPT_PREVIEW_SECONDS):
+            try:
+                data = audio_path.read_bytes()
+                if len(data) <= 44:
+                    continue
+                with wave.open(str(preview_path), "wb") as preview:
+                    preview.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                    preview.writeframes(data[44:])
+                transcript = transcribe_audio(transcriber, settings, preview_path)
+            except OSError:
+                continue
+            except Exception as error:
+                print(
+                    f"Glossy: live transcript stopped: {error}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return
+            if transcript and transcript != previous:
+                print(f"Glossy heard: {transcript}", flush=True)
+                previous = transcript
+    finally:
+        preview_path.unlink(missing_ok=True)
+
+
+def start_transcript_stream(transcriber, settings, audio_path):
+    stopped = threading.Event()
+    thread = threading.Thread(
+        target=stream_transcript,
+        args=(transcriber, settings, audio_path, stopped),
+        daemon=True,
+    )
+    thread.start()
+    return stopped, thread
+
+
+def stop_transcript_stream(stream):
+    stopped, thread = stream
+    stopped.set()
+    thread.join()
+
+
 def answer_question(client, transcriber, settings, audio_path):
     if not has_speech(
         audio_path,
@@ -311,14 +369,10 @@ def answer_question(client, transcriber, settings, audio_path):
         print("Glossy: no speech detected; skipped OpenAI.", flush=True)
         return False
 
-    segments, _ = transcriber.transcribe(
-        str(audio_path),
-        language="en",
-        beam_size=settings["transcription_beam_size"],
-    )
-    transcript = "".join(segment.text for segment in segments).strip()
+    transcript = transcribe_audio(transcriber, settings, audio_path)
     if not transcript:
         raise RuntimeError("Local Whisper returned an empty transcript")
+    print(f"Glossy transcript: {transcript}", flush=True)
 
     request = dict(
         model=settings["model"],
@@ -347,6 +401,7 @@ def listen_connected(
 ):
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
     recorder = None
+    transcript_stream = None
     visualizer = None
     pressed_at = None
     print(f"Glossy is listening for {button_name}.", flush=True)
@@ -360,6 +415,9 @@ def listen_connected(
                 if remaining <= 0:
                     play_blip(START_BLIP_SOUND)
                     recorder = start_recording(audio_path)
+                    transcript_stream = start_transcript_stream(
+                        transcriber, settings, audio_path
+                    )
                     visualizer = start_visualizer(
                         audio_path, settings["visualizer_sensitivity"]
                     )
@@ -382,6 +440,8 @@ def listen_connected(
                                 print("Ignored short press.", flush=True)
                             else:
                                 stop_recording(recorder, audio_path)
+                                stop_transcript_stream(transcript_stream)
+                                transcript_stream = None
                                 stop_visualizer(visualizer)
                                 visualizer = None
                                 play_blip(STOP_BLIP_SOUND)
@@ -393,6 +453,9 @@ def listen_connected(
                         except Exception as error:
                             report_error(error)
                         finally:
+                            if transcript_stream is not None:
+                                stop_transcript_stream(transcript_stream)
+                                transcript_stream = None
                             if visualizer is not None:
                                 stop_visualizer(visualizer)
                                 visualizer = None
@@ -400,6 +463,8 @@ def listen_connected(
                             recorder = None
                             audio_path.unlink(missing_ok=True)
     finally:
+        if transcript_stream is not None:
+            stop_transcript_stream(transcript_stream)
         if visualizer is not None:
             stop_visualizer(visualizer)
         if recorder is not None and recorder.poll() is None:

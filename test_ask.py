@@ -69,7 +69,8 @@ class ConfigTest(unittest.TestCase):
 class AnswerQuestionTest(unittest.TestCase):
     @patch("ask.has_speech", return_value=True)
     @patch("ask.speak")
-    def test_transcribes_answers_and_speaks(self, speak, _has_speech):
+    @patch("builtins.print")
+    def test_transcribes_answers_and_speaks(self, _output, speak, _has_speech):
         client = Mock()
         transcriber = Mock()
         transcriber.transcribe.return_value = (
@@ -95,6 +96,27 @@ class AnswerQuestionTest(unittest.TestCase):
             reasoning={"effort": "none"},
         )
         speak.assert_called_once_with("A mutex permits one thread at a time.")
+
+    @patch("builtins.print")
+    def test_streams_live_transcript(self, output):
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="What is a mutex?")],
+            SimpleNamespace(),
+        )
+        stopped = Mock()
+        stopped.wait.side_effect = [False, True]
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            with wave.open(str(audio), "wb") as recording:
+                recording.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                recording.writeframes(array("h", [1000, -1000] * 1600).tobytes())
+            ask.stream_transcript(transcriber, TEST_SETTINGS, audio, stopped)
+
+        output.assert_called_once_with(
+            "Glossy heard: What is a mutex?", flush=True
+        )
 
     @patch("builtins.print")
     def test_silence_never_reaches_openai(self, _print):
@@ -234,6 +256,8 @@ class InputDelayTest(unittest.TestCase):
 
     @patch("builtins.print")
     @patch("ask.answer_question")
+    @patch("ask.stop_transcript_stream")
+    @patch("ask.start_transcript_stream")
     @patch("ask.stop_recording")
     @patch("ask.stop_visualizer")
     @patch("ask.start_visualizer")
@@ -246,18 +270,27 @@ class InputDelayTest(unittest.TestCase):
         start_visualizer,
         stop_visualizer,
         stop_recording,
+        start_transcript_stream,
+        stop_transcript_stream,
         answer_question,
         _print,
     ):
         order = []
         visualizer = Mock()
+        transcript_stream = Mock()
         play_blip.side_effect = lambda sound: order.append(sound.name)
         start_recording.side_effect = lambda _path: order.append("record") or Mock()
+        start_transcript_stream.side_effect = (
+            lambda *_args: order.append("transcript-start") or transcript_stream
+        )
         start_visualizer.side_effect = (
             lambda _path, _sensitivity: order.append("visualizer-start") or visualizer
         )
         stop_visualizer.side_effect = lambda _process: order.append("visualizer-stop")
         stop_recording.side_effect = lambda *_args: order.append("stop")
+        stop_transcript_stream.side_effect = lambda *_args: order.append(
+            "transcript-stop"
+        )
         answer_question.side_effect = lambda *_args: order.append("answer")
         keyboard = Mock()
         keyboard.read.side_effect = [
@@ -281,8 +314,10 @@ class InputDelayTest(unittest.TestCase):
             [
                 "blip.mp3",
                 "record",
+                "transcript-start",
                 "visualizer-start",
                 "stop",
+                "transcript-stop",
                 "visualizer-stop",
                 "blip-reversed.mp3",
                 "answer",
@@ -290,6 +325,7 @@ class InputDelayTest(unittest.TestCase):
         )
         stop_visualizer.assert_called_once_with(visualizer)
         stop_recording.assert_called_once()
+        stop_transcript_stream.assert_called_once_with(transcript_stream)
         answer_question.assert_called_once()
 
 
