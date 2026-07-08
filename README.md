@@ -1,11 +1,11 @@
 # Glossy
 
 Hold Right Alt, ask a question, then release it. Glossy records the hold with
-`arecord`, transcribes it with OpenAI Whisper, asks the configured OpenAI model,
+`arecord`, transcribes it locally with Whisper, asks the configured OpenAI model,
 and reads the answer with a local Piper neural voice. Holds shorter than the
 configured threshold are ignored; a blip starts recording and a reversed blip
-marks its end. While recording, a small voice-reactive indicator appears at the
-bottom-center of the screen.
+marks its end. While recording, the live transcript refreshes in the terminal and a
+small voice-reactive indicator appears at the bottom-center of the screen.
 
 ## Setup
 
@@ -35,6 +35,8 @@ Runtime behavior lives in `config.json`:
 {
   "model": "gpt-5.5",
   "reasoning_effort": "medium",
+  "transcription_model": "small.en",
+  "transcription_beam_size": 1,
   "hold_seconds": 1.0,
   "button": "KEY_RIGHTALT",
   "visualizer_sensitivity": 4.0,
@@ -47,7 +49,13 @@ Runtime behavior lives in `config.json`:
 
 Use Linux evdev key names for `button`. Set `reasoning_effort` to `null` for
 models that do not support reasoning controls. Restart Glossy after editing the
-file. Raise `visualizer_sensitivity` if the recording bars move too little.
+file. `transcription_model` controls the local Whisper size; `small.en` is the
+default accuracy/latency balance for English on CPU. Raise
+`transcription_beam_size` for potentially better transcription at the cost of
+latency. Use `base.en` or `tiny.en` if live terminal dictation lags. The model
+downloads on first startup and then runs locally. Raise
+`visualizer_sensitivity` if the recording bars move too little. Downloaded
+models are kept in the repository's ignored `models/` directory.
 Raise `speech_rms_threshold` if background noise is being uploaded; lower it if
 quiet speech is skipped. Recordings need at least `minimum_speech_seconds` above
 that threshold and classified as speech by the local WebRTC detector before

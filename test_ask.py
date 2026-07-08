@@ -13,6 +13,8 @@ import ask
 TEST_SETTINGS = {
     "model": "test-model",
     "reasoning_effort": "none",
+    "transcription_model": "small.en",
+    "transcription_beam_size": 1,
     "hold_seconds": 0.35,
     "button": "KEY_RIGHTALT",
     "visualizer_sensitivity": 4.0,
@@ -28,6 +30,8 @@ class ConfigTest(unittest.TestCase):
         settings = {
             "model": "gpt-5.5",
             "reasoning_effort": "none",
+            "transcription_model": "small.en",
+            "transcription_beam_size": 1,
             "hold_seconds": 0.5,
             "button": "KEY_HOME",
             "visualizer_sensitivity": 4.0,
@@ -45,6 +49,8 @@ class ConfigTest(unittest.TestCase):
         settings = {
             "model": "gpt-5.5",
             "reasoning_effort": "none",
+            "transcription_model": "small.en",
+            "transcription_beam_size": 1,
             "hold_seconds": 0.5,
             "button": "KEY_NOT_REAL",
             "visualizer_sensitivity": 4.0,
@@ -64,10 +70,13 @@ class AnswerQuestionTest(unittest.TestCase):
     @patch("builtins.print")
     @patch("ask.has_speech", return_value=True)
     @patch("ask.speak")
-    def test_transcribes_answers_and_speaks(self, speak, _has_speech, output):
+    @patch("builtins.print")
+    def test_transcribes_answers_and_speaks(self, _output, speak, _has_speech):
         client = Mock()
-        client.audio.transcriptions.create.return_value = SimpleNamespace(
-            text="What is a mutex?"
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="What is a mutex?")],
+            SimpleNamespace(),
         )
         client.responses.create.return_value = SimpleNamespace(
             output_text="A mutex permits one thread at a time."
@@ -76,10 +85,16 @@ class AnswerQuestionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "question.wav"
             audio.write_bytes(b"RIFF fake audio")
-            ask.answer_question(client, TEST_SETTINGS, audio)
+            ask.answer_question(client, transcriber, TEST_SETTINGS, audio)
 
-        transcription = client.audio.transcriptions.create.call_args.kwargs
-        self.assertEqual(transcription["model"], "whisper-1")
+        transcriber.transcribe.assert_called_once_with(
+            str(audio),
+            language="en",
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
+            without_timestamps=True,
+        )
         client.responses.create.assert_called_once_with(
             model="test-model",
             instructions=ask.SYSTEM_PROMPT,
@@ -90,16 +105,44 @@ class AnswerQuestionTest(unittest.TestCase):
         output.assert_called_once_with("Glossy transcript: 'What is a mutex?'", flush=True)
 
     @patch("builtins.print")
+    def test_streams_live_transcript(self, output):
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="What is a mutex?")],
+            SimpleNamespace(),
+        )
+        stopped = Mock()
+        stopped.wait.side_effect = [False, True]
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            with wave.open(str(audio), "wb") as recording:
+                recording.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                recording.writeframes(array("h", [1000, -1000] * 1600).tobytes())
+            ask.stream_transcript(transcriber, TEST_SETTINGS, audio, stopped)
+
+        output.assert_has_calls(
+            [
+                call("\rGlossy heard: What is a mutex?", end="", flush=True),
+                call(flush=True),
+            ]
+        )
+
+    @patch("builtins.print")
     def test_silence_never_reaches_openai(self, _print):
         client = Mock()
+        transcriber = Mock()
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "silence.wav"
             with wave.open(str(audio), "wb") as output:
                 output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
                 output.writeframes(array("h", [0] * 16000).tobytes())
-            self.assertFalse(ask.answer_question(client, TEST_SETTINGS, audio))
+            self.assertFalse(
+                ask.answer_question(client, transcriber, TEST_SETTINGS, audio)
+            )
 
-        client.audio.transcriptions.create.assert_not_called()
+        transcriber.transcribe.assert_not_called()
+        client.responses.create.assert_not_called()
 
     @patch("ask.webrtcvad.Vad")
     @patch("builtins.print")
@@ -190,7 +233,7 @@ class InputDelayTest(unittest.TestCase):
         ]
 
         with self.assertRaises(KeyboardInterrupt):
-            ask.listen(Mock(), TEST_SETTINGS)
+            ask.listen(Mock(), Mock(), TEST_SETTINGS)
 
         self.assertEqual(wait_for_keyboards.call_count, 2)
 
@@ -215,7 +258,7 @@ class InputDelayTest(unittest.TestCase):
             patch("ask.time.monotonic", side_effect=[0.0, 0.1]),
             self.assertRaises(KeyboardInterrupt),
         ):
-            ask.listen(Mock(), TEST_SETTINGS)
+            ask.listen(Mock(), Mock(), TEST_SETTINGS)
 
         start_recording.assert_not_called()
         start_visualizer.assert_not_called()
@@ -223,6 +266,8 @@ class InputDelayTest(unittest.TestCase):
 
     @patch("builtins.print")
     @patch("ask.answer_question")
+    @patch("ask.stop_transcript_stream")
+    @patch("ask.start_transcript_stream")
     @patch("ask.stop_recording")
     @patch("ask.stop_visualizer")
     @patch("ask.start_visualizer")
@@ -235,18 +280,27 @@ class InputDelayTest(unittest.TestCase):
         start_visualizer,
         stop_visualizer,
         stop_recording,
+        start_transcript_stream,
+        stop_transcript_stream,
         answer_question,
         _print,
     ):
         order = []
         visualizer = Mock()
+        transcript_stream = Mock()
         play_blip.side_effect = lambda sound: order.append(sound.name)
         start_recording.side_effect = lambda _path: order.append("record") or Mock()
+        start_transcript_stream.side_effect = (
+            lambda *_args: order.append("transcript-start") or transcript_stream
+        )
         start_visualizer.side_effect = (
             lambda _path, _sensitivity: order.append("visualizer-start") or visualizer
         )
         stop_visualizer.side_effect = lambda _process: order.append("visualizer-stop")
         stop_recording.side_effect = lambda *_args: order.append("stop")
+        stop_transcript_stream.side_effect = lambda *_args: order.append(
+            "transcript-stop"
+        )
         answer_question.side_effect = lambda *_args: order.append("answer")
         keyboard = Mock()
         keyboard.read.side_effect = [
@@ -262,7 +316,7 @@ class InputDelayTest(unittest.TestCase):
             patch("ask.time.monotonic", side_effect=[0.0, TEST_SETTINGS["hold_seconds"]]),
             self.assertRaises(KeyboardInterrupt),
         ):
-            ask.listen(Mock(), TEST_SETTINGS)
+            ask.listen(Mock(), Mock(), TEST_SETTINGS)
 
         start_recording.assert_called_once()
         self.assertEqual(
@@ -270,8 +324,10 @@ class InputDelayTest(unittest.TestCase):
             [
                 "blip.mp3",
                 "record",
+                "transcript-start",
                 "visualizer-start",
                 "stop",
+                "transcript-stop",
                 "visualizer-stop",
                 "blip-reversed.mp3",
                 "answer",
@@ -279,6 +335,7 @@ class InputDelayTest(unittest.TestCase):
         )
         stop_visualizer.assert_called_once_with(visualizer)
         stop_recording.assert_called_once()
+        stop_transcript_stream.assert_called_once_with(transcript_stream)
         answer_question.assert_called_once()
 
 
