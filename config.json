@@ -5,5 +5,6 @@
   "button": "KEY_RIGHTALT",
   "visualizer_sensitivity": 4.0,
   "speech_rms_threshold": 300,
-  "minimum_speech_seconds": 0.15
+  "minimum_speech_seconds": 0.15,
+  "vad_aggressiveness": 3
 }

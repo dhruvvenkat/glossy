@@ -18,6 +18,7 @@ TEST_SETTINGS = {
     "visualizer_sensitivity": 4.0,
     "speech_rms_threshold": 300,
     "minimum_speech_seconds": 0.15,
+    "vad_aggressiveness": 3,
 }
 
 
@@ -31,6 +32,7 @@ class ConfigTest(unittest.TestCase):
             "visualizer_sensitivity": 4.0,
             "speech_rms_threshold": 300,
             "minimum_speech_seconds": 0.15,
+            "vad_aggressiveness": 3,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -46,6 +48,7 @@ class ConfigTest(unittest.TestCase):
             "visualizer_sensitivity": 4.0,
             "speech_rms_threshold": 300,
             "minimum_speech_seconds": 0.15,
+            "vad_aggressiveness": 3,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -93,13 +96,16 @@ class AnswerQuestionTest(unittest.TestCase):
 
         client.audio.transcriptions.create.assert_not_called()
 
-    def test_detects_sustained_local_audio(self):
+    @patch("ask.webrtcvad.Vad")
+    def test_detects_sustained_local_audio(self, vad):
+        vad.return_value.is_speech.return_value = True
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "voice.wav"
             with wave.open(str(audio), "wb") as output:
                 output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
                 output.writeframes(array("h", [1000, -1000] * 1600).tobytes())
-            self.assertTrue(ask.has_speech(audio, 300, 0.15))
+            self.assertTrue(ask.has_speech(audio, 300, 0.15, 3))
+        vad.assert_called_once_with(3)
 
     @patch("ask.subprocess.run")
     def test_speak_uses_piper_then_aplay(self, run):

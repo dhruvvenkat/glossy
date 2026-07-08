@@ -16,6 +16,7 @@ from pathlib import Path
 
 from evdev import InputDevice, ecodes, list_devices
 from openai import OpenAI
+import webrtcvad
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 CONFIG_FILE = Path(__file__).parent / "config.json"
@@ -42,6 +43,7 @@ def load_settings(path=CONFIG_FILE):
         "visualizer_sensitivity",
         "speech_rms_threshold",
         "minimum_speech_seconds",
+        "vad_aggressiveness",
     }
     if not isinstance(settings, dict) or set(settings) != expected:
         raise RuntimeError(f"{path} must contain exactly: {', '.join(sorted(expected))}")
@@ -88,6 +90,9 @@ def load_settings(path=CONFIG_FILE):
         or minimum_speech < 0
     ):
         raise RuntimeError("minimum_speech_seconds must be a non-negative number")
+    aggressiveness = settings["vad_aggressiveness"]
+    if isinstance(aggressiveness, bool) or aggressiveness not in range(4):
+        raise RuntimeError("vad_aggressiveness must be an integer from 0 to 3")
     return settings
 
 
@@ -230,22 +235,24 @@ def speak(text):
         speech_path.unlink(missing_ok=True)
 
 
-def has_speech(path, rms_threshold, minimum_seconds):
+def has_speech(path, rms_threshold, minimum_seconds, aggressiveness):
     with wave.open(str(path), "rb") as audio:
         if audio.getnchannels() != 1 or audio.getsampwidth() != 2:
             raise RuntimeError("Expected 16-bit mono recording")
-        frames_per_window = max(1, audio.getframerate() // 50)
-        required_windows = max(
-            1, math.ceil(minimum_seconds * audio.getframerate() / frames_per_window)
-        )
+        sample_rate = audio.getframerate()
+        if sample_rate not in {8000, 16000, 32000, 48000}:
+            raise RuntimeError("WebRTC VAD requires an 8, 16, 32, or 48 kHz recording")
+        frames_per_window = sample_rate * 30 // 1000
+        required_windows = max(1, math.ceil(minimum_seconds / 0.03))
         loud_windows = 0
-        while data := audio.readframes(frames_per_window):
+        vad = webrtcvad.Vad(aggressiveness)
+        while len(data := audio.readframes(frames_per_window)) == frames_per_window * 2:
             samples = array("h")
             samples.frombytes(data)
             if sys.byteorder != "little":
                 samples.byteswap()
             rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
-            if rms >= rms_threshold:
+            if rms >= rms_threshold and vad.is_speech(data, sample_rate):
                 loud_windows += 1
                 if loud_windows >= required_windows:
                     return True
@@ -257,6 +264,7 @@ def answer_question(client, settings, audio_path):
         audio_path,
         settings["speech_rms_threshold"],
         settings["minimum_speech_seconds"],
+        settings["vad_aggressiveness"],
     ):
         print("Glossy: no speech detected; skipped OpenAI.", flush=True)
         return False
