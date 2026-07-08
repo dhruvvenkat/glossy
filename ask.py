@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import wave
+from array import array
 from pathlib import Path
 
 from evdev import InputDevice, ecodes, list_devices
@@ -38,6 +40,8 @@ def load_settings(path=CONFIG_FILE):
         "hold_seconds",
         "button",
         "visualizer_sensitivity",
+        "speech_rms_threshold",
+        "minimum_speech_seconds",
     }
     if not isinstance(settings, dict) or set(settings) != expected:
         raise RuntimeError(f"{path} must contain exactly: {', '.join(sorted(expected))}")
@@ -68,6 +72,22 @@ def load_settings(path=CONFIG_FILE):
         or sensitivity <= 0
     ):
         raise RuntimeError("visualizer_sensitivity must be a positive number")
+    speech_threshold = settings["speech_rms_threshold"]
+    if (
+        isinstance(speech_threshold, bool)
+        or not isinstance(speech_threshold, (int, float))
+        or not math.isfinite(speech_threshold)
+        or speech_threshold <= 0
+    ):
+        raise RuntimeError("speech_rms_threshold must be a positive number")
+    minimum_speech = settings["minimum_speech_seconds"]
+    if (
+        isinstance(minimum_speech, bool)
+        or not isinstance(minimum_speech, (int, float))
+        or not math.isfinite(minimum_speech)
+        or minimum_speech < 0
+    ):
+        raise RuntimeError("minimum_speech_seconds must be a non-negative number")
     return settings
 
 
@@ -210,7 +230,37 @@ def speak(text):
         speech_path.unlink(missing_ok=True)
 
 
+def has_speech(path, rms_threshold, minimum_seconds):
+    with wave.open(str(path), "rb") as audio:
+        if audio.getnchannels() != 1 or audio.getsampwidth() != 2:
+            raise RuntimeError("Expected 16-bit mono recording")
+        frames_per_window = max(1, audio.getframerate() // 50)
+        required_windows = max(
+            1, math.ceil(minimum_seconds * audio.getframerate() / frames_per_window)
+        )
+        loud_windows = 0
+        while data := audio.readframes(frames_per_window):
+            samples = array("h")
+            samples.frombytes(data)
+            if sys.byteorder != "little":
+                samples.byteswap()
+            rms = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
+            if rms >= rms_threshold:
+                loud_windows += 1
+                if loud_windows >= required_windows:
+                    return True
+    return False
+
+
 def answer_question(client, settings, audio_path):
+    if not has_speech(
+        audio_path,
+        settings["speech_rms_threshold"],
+        settings["minimum_speech_seconds"],
+    ):
+        print("Glossy: no speech detected; skipped OpenAI.", flush=True)
+        return False
+
     with audio_path.open("rb") as audio:
         transcript = client.audio.transcriptions.create(
             model="whisper-1", file=audio
@@ -229,6 +279,7 @@ def answer_question(client, settings, audio_path):
     if not answer:
         raise RuntimeError("OpenAI returned an empty answer")
     speak(answer)
+    return True
 
 
 def report_error(error):

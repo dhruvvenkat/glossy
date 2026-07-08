@@ -2,6 +2,8 @@ import errno
 import json
 import tempfile
 import unittest
+import wave
+from array import array
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
@@ -14,6 +16,8 @@ TEST_SETTINGS = {
     "hold_seconds": 0.35,
     "button": "KEY_RIGHTALT",
     "visualizer_sensitivity": 4.0,
+    "speech_rms_threshold": 300,
+    "minimum_speech_seconds": 0.15,
 }
 
 
@@ -25,6 +29,8 @@ class ConfigTest(unittest.TestCase):
             "hold_seconds": 0.5,
             "button": "KEY_HOME",
             "visualizer_sensitivity": 4.0,
+            "speech_rms_threshold": 300,
+            "minimum_speech_seconds": 0.15,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -38,6 +44,8 @@ class ConfigTest(unittest.TestCase):
             "hold_seconds": 0.5,
             "button": "KEY_NOT_REAL",
             "visualizer_sensitivity": 4.0,
+            "speech_rms_threshold": 300,
+            "minimum_speech_seconds": 0.15,
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.json"
@@ -47,8 +55,9 @@ class ConfigTest(unittest.TestCase):
 
 
 class AnswerQuestionTest(unittest.TestCase):
+    @patch("ask.has_speech", return_value=True)
     @patch("ask.speak")
-    def test_transcribes_answers_and_speaks(self, speak):
+    def test_transcribes_answers_and_speaks(self, speak, _has_speech):
         client = Mock()
         client.audio.transcriptions.create.return_value = SimpleNamespace(
             text="What is a mutex?"
@@ -71,6 +80,26 @@ class AnswerQuestionTest(unittest.TestCase):
             reasoning={"effort": "none"},
         )
         speak.assert_called_once_with("A mutex permits one thread at a time.")
+
+    @patch("builtins.print")
+    def test_silence_never_reaches_openai(self, _print):
+        client = Mock()
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "silence.wav"
+            with wave.open(str(audio), "wb") as output:
+                output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                output.writeframes(array("h", [0] * 16000).tobytes())
+            self.assertFalse(ask.answer_question(client, TEST_SETTINGS, audio))
+
+        client.audio.transcriptions.create.assert_not_called()
+
+    def test_detects_sustained_local_audio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "voice.wav"
+            with wave.open(str(audio), "wb") as output:
+                output.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+                output.writeframes(array("h", [1000, -1000] * 1600).tobytes())
+            self.assertTrue(ask.has_speech(audio, 300, 0.15))
 
     @patch("ask.subprocess.run")
     def test_speak_uses_piper_then_aplay(self, run):

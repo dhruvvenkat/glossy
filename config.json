@@ -3,5 +3,7 @@
   "reasoning_effort": "none",
   "hold_seconds": 1.0,
   "button": "KEY_RIGHTALT",
-  "visualizer_sensitivity": 4.0
+  "visualizer_sensitivity": 4.0,
+  "speech_rms_threshold": 300,
+  "minimum_speech_seconds": 0.15
 }
