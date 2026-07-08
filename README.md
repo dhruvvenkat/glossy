@@ -37,13 +37,18 @@ Runtime behavior lives in `config.json`:
   "reasoning_effort": "medium",
   "hold_seconds": 1.0,
   "button": "KEY_RIGHTALT",
-  "visualizer_sensitivity": 4.0
+  "visualizer_sensitivity": 4.0,
+  "speech_rms_threshold": 300,
+  "minimum_speech_seconds": 0.15
 }
 ```
 
 Use Linux evdev key names for `button`. Set `reasoning_effort` to `null` for
 models that do not support reasoning controls. Restart Glossy after editing the
 file. Raise `visualizer_sensitivity` if the recording bars move too little.
+Raise `speech_rms_threshold` if background noise is being uploaded; lower it if
+quiet speech is skipped. Recordings need at least `minimum_speech_seconds` above
+that threshold before Glossy contacts OpenAI.
 
 Run Glossy in the foreground first:
 
