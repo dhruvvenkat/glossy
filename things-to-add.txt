@@ -14,5 +14,8 @@
 
 - figure out the optimal way of tracking API spend (shouldnt be spending more than a few bucks a month on this)
 
+- maybe store all of the questions + answers in a database of some sort
+  --> turn it into a knowledge graph to see everything ive read over the past X amount of time
+
 - stretch goal: on-laptop transcription? will have to do an experiment to figure out whether gpt-whisper is better/worse than onboard transcription options
   --> would greatly reduce time-to-response
