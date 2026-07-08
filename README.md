@@ -39,7 +39,8 @@ Runtime behavior lives in `config.json`:
   "button": "KEY_RIGHTALT",
   "visualizer_sensitivity": 4.0,
   "speech_rms_threshold": 300,
-  "minimum_speech_seconds": 0.15
+  "minimum_speech_seconds": 0.15,
+  "vad_aggressiveness": 3
 }
 ```
 
@@ -48,7 +49,9 @@ models that do not support reasoning controls. Restart Glossy after editing the
 file. Raise `visualizer_sensitivity` if the recording bars move too little.
 Raise `speech_rms_threshold` if background noise is being uploaded; lower it if
 quiet speech is skipped. Recordings need at least `minimum_speech_seconds` above
-that threshold before Glossy contacts OpenAI.
+that threshold and classified as speech by the local WebRTC detector before
+Glossy contacts OpenAI. `vad_aggressiveness` ranges from `0` to `3`; higher
+values reject more non-speech noise.
 
 Run Glossy in the foreground first:
 
