@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from visualizer import audio_level, cascade_progress, primary_geometry
+from visualizer import audio_level, cascade_progress, primary_geometry, transcript_size
 
 
 class AudioLevelTest(unittest.TestCase):
@@ -29,6 +29,9 @@ class AudioLevelTest(unittest.TestCase):
     def test_bar_drop_is_cascaded(self):
         self.assertGreater(cascade_progress(0.2, 0), cascade_progress(0.2, 2))
         self.assertEqual(cascade_progress(1.0, 4), 1.0)
+
+    def test_transcript_box_fits_text_tightly(self):
+        self.assertEqual(transcript_size((0, 0, 300, 17), 1920), (332, 55))
 
 
 if __name__ == "__main__":

@@ -17,6 +17,9 @@ TEXT_COLOR = "#f9fafb"
 BAR_WIDTH = 4
 BAR_SPACING = 9
 BAR_DROP_DELAY = 0.08
+TEXT_PAD_X = 16
+TEXT_TOP = 7
+BAR_BOTTOM_PAD = 12
 
 
 def primary_geometry(default_width, default_height):
@@ -81,6 +84,18 @@ def cascade_progress(progress, index):
     return eased((progress - delay) / (1 - delay))
 
 
+def transcript_size(text_box, screen_width):
+    if not text_box:
+        return WIDTH, HEIGHT
+    text_width = text_box[2] - text_box[0]
+    text_height = text_box[3] - text_box[1]
+    max_width = max(220, min(QUESTION_WIDTH, screen_width - 64))
+    return (
+        max(WIDTH, min(max_width, text_width + TEXT_PAD_X * 2)),
+        max(HEIGHT, text_height + 38),
+    )
+
+
 def main(audio_path, sensitivity, question_path=None):
     root = tk.Tk()
     root.overrideredirect(True)
@@ -92,7 +107,7 @@ def main(audio_path, sensitivity, question_path=None):
     canvas.pack()
     text = canvas.create_text(
         WIDTH // 2,
-        10,
+        TEXT_TOP,
         text="",
         fill=TEXT_COLOR,
         font=("Sans", 11),
@@ -119,23 +134,24 @@ def main(audio_path, sensitivity, question_path=None):
         drop = min(1.0, drop + 0.08) if transcript else max(0.0, drop - 0.12)
 
         screen_width = root.winfo_screenwidth()
-        full_width = max(220, min(QUESTION_WIDTH, screen_width - 64))
+        max_width = max(220, min(QUESTION_WIDTH, screen_width - 64))
         canvas.itemconfigure(
             text,
             text=transcript,
-            width=full_width - 28,
+            width=max_width - TEXT_PAD_X * 2,
             state=tk.NORMAL if transcript else tk.HIDDEN,
         )
         root.update_idletasks()
-        text_box = canvas.bbox(text)
-        text_height = text_box[3] - text_box[1] if transcript and text_box else 0
-        full_height = max(82, text_height + 44)
+        full_width, full_height = transcript_size(
+            canvas.bbox(text) if transcript else None, screen_width
+        )
         expansion = eased(drop)
         view_width = round(WIDTH + (full_width - WIDTH) * expansion)
         view_height = round(HEIGHT + (full_height - HEIGHT) * expansion)
         canvas.config(width=view_width, height=view_height)
         root.geometry(bottom_center(root, view_width, view_height))
-        canvas.coords(text, view_width / 2, 10)
+        canvas.itemconfigure(text, width=max(1, view_width - TEXT_PAD_X * 2))
+        canvas.coords(text, view_width / 2, TEXT_TOP)
 
         smoothed = smoothed * 0.6 + audio_level(audio_path, sensitivity) * 0.4
         phase += 0.55
@@ -144,7 +160,7 @@ def main(audio_path, sensitivity, question_path=None):
             height = 4 + smoothed * 16 * movement
             progress = cascade_progress(drop, index)
             x = view_width / 2 + (index - 2) * BAR_SPACING
-            y = HEIGHT / 2 + (view_height - 18 - HEIGHT / 2) * progress
+            y = HEIGHT / 2 + (view_height - BAR_BOTTOM_PAD - HEIGHT / 2) * progress
             canvas.coords(bar, x, y - height / 2, x, y + height / 2)
         root.after(50, animate)
 
