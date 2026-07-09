@@ -67,18 +67,12 @@ class ConfigTest(unittest.TestCase):
 
 
 class AnswerQuestionTest(unittest.TestCase):
-    @patch("ask.stop_visualizer")
-    @patch("ask.start_question_overlay")
     @patch("ask.has_speech", return_value=True)
     @patch("ask.speak")
     @patch("builtins.print")
-    def test_transcribes_answers_and_speaks(
-        self, output, speak, _has_speech, start_question_overlay, stop_visualizer
-    ):
+    def test_transcribes_answers_and_speaks(self, output, speak, _has_speech):
         client = Mock()
         transcriber = Mock()
-        question_overlay = Mock()
-        start_question_overlay.return_value = question_overlay
         transcriber.transcribe.return_value = (
             [SimpleNamespace(text="What is a mutex?")],
             SimpleNamespace(),
@@ -91,6 +85,7 @@ class AnswerQuestionTest(unittest.TestCase):
             audio = Path(directory) / "question.wav"
             audio.write_bytes(b"RIFF fake audio")
             ask.answer_question(client, transcriber, TEST_SETTINGS, audio)
+            self.assertEqual(audio.with_suffix(".txt").read_text(), "What is a mutex?\n")
 
         transcriber.transcribe.assert_called_once_with(
             str(audio),
@@ -108,8 +103,6 @@ class AnswerQuestionTest(unittest.TestCase):
         )
         speak.assert_called_once_with("A mutex permits one thread at a time.")
         output.assert_called_once_with("Glossy question: 'What is a mutex?'", flush=True)
-        start_question_overlay.assert_called_once_with("What is a mutex?")
-        stop_visualizer.assert_called_once_with(question_overlay)
 
     @patch("builtins.print")
     def test_streams_live_transcript(self, output):
@@ -205,16 +198,10 @@ class AnswerQuestionTest(unittest.TestCase):
     @patch("ask.subprocess.Popen")
     def test_visualizer_uses_recording_file(self, popen):
         audio = Path("question.wav")
-        ask.start_visualizer(audio, 4.0)
+        question = Path("question.txt")
+        ask.start_visualizer(audio, 4.0, question)
         popen.assert_called_once_with(
-            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio), "4.0"]
-        )
-
-    @patch("ask.subprocess.Popen")
-    def test_question_overlay_uses_visualizer_text_mode(self, popen):
-        ask.start_question_overlay("What is a mutex?")
-        popen.assert_called_once_with(
-            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), "--question", "What is a mutex?"]
+            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio), "4.0", str(question)]
         )
 
 
@@ -308,7 +295,8 @@ class InputDelayTest(unittest.TestCase):
             lambda *_args: order.append("transcript-start") or transcript_stream
         )
         start_visualizer.side_effect = (
-            lambda _path, _sensitivity: order.append("visualizer-start") or visualizer
+            lambda _path, _sensitivity, _question_path: order.append("visualizer-start")
+            or visualizer
         )
         stop_visualizer.side_effect = lambda _process: order.append("visualizer-stop")
         stop_recording.side_effect = lambda *_args: order.append("stop")
@@ -342,9 +330,9 @@ class InputDelayTest(unittest.TestCase):
                 "visualizer-start",
                 "stop",
                 "transcript-stop",
-                "visualizer-stop",
                 "blip-reversed.mp3",
                 "answer",
+                "visualizer-stop",
             ],
         )
         stop_visualizer.assert_called_once_with(visualizer)

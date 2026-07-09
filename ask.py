@@ -211,14 +211,11 @@ def stop_recording(recorder, path):
         raise RuntimeError(error.strip() or "No audio was recorded")
 
 
-def start_visualizer(audio_path, sensitivity):
-    return subprocess.Popen(
-        [sys.executable, str(VISUALIZER_SCRIPT), str(audio_path), str(sensitivity)]
-    )
-
-
-def start_question_overlay(question):
-    return subprocess.Popen([sys.executable, str(VISUALIZER_SCRIPT), "--question", question])
+def start_visualizer(audio_path, sensitivity, question_path=None):
+    command = [sys.executable, str(VISUALIZER_SCRIPT), str(audio_path), str(sensitivity)]
+    if question_path is not None:
+        command.append(str(question_path))
+    return subprocess.Popen(command)
 
 
 def stop_visualizer(visualizer):
@@ -384,22 +381,19 @@ def answer_question(client, transcriber, settings, audio_path):
     if not transcript:
         raise RuntimeError("Local Whisper returned an empty transcript")
     print(f"Glossy question: {transcript!r}", flush=True)
-    question_overlay = start_question_overlay(transcript)
+    audio_path.with_suffix(".txt").write_text(transcript + "\n")
 
-    try:
-        request = dict(
-            model=settings["model"],
-            instructions=SYSTEM_PROMPT,
-            input=transcript,
-        )
-        if settings["reasoning_effort"] is not None:
-            request["reasoning"] = {"effort": settings["reasoning_effort"]}
-        answer = client.responses.create(**request).output_text.strip()
-        if not answer:
-            raise RuntimeError("OpenAI returned an empty answer")
-        speak(answer)
-    finally:
-        stop_visualizer(question_overlay)
+    request = dict(
+        model=settings["model"],
+        instructions=SYSTEM_PROMPT,
+        input=transcript,
+    )
+    if settings["reasoning_effort"] is not None:
+        request["reasoning"] = {"effort": settings["reasoning_effort"]}
+    answer = client.responses.create(**request).output_text.strip()
+    if not answer:
+        raise RuntimeError("OpenAI returned an empty answer")
+    speak(answer)
     return True
 
 
@@ -415,6 +409,7 @@ def listen_connected(
     client, transcriber, settings, keyboards, button_code, button_name
 ):
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
+    question_path = audio_path.with_suffix(".txt")
     recorder = None
     transcript_stream = None
     visualizer = None
@@ -429,12 +424,13 @@ def listen_connected(
                 remaining = settings["hold_seconds"] - held_for
                 if remaining <= 0:
                     play_blip(START_BLIP_SOUND)
+                    question_path.unlink(missing_ok=True)
                     recorder = start_recording(audio_path)
                     transcript_stream = start_transcript_stream(
                         transcriber, settings, audio_path
                     )
                     visualizer = start_visualizer(
-                        audio_path, settings["visualizer_sensitivity"]
+                        audio_path, settings["visualizer_sensitivity"], question_path
                     )
                     print("Recording...", flush=True)
                 else:
@@ -457,13 +453,13 @@ def listen_connected(
                                 stop_recording(recorder, audio_path)
                                 stop_transcript_stream(transcript_stream)
                                 transcript_stream = None
-                                stop_visualizer(visualizer)
-                                visualizer = None
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
                                 answer_question(
                                     client, transcriber, settings, audio_path
                                 )
+                                stop_visualizer(visualizer)
+                                visualizer = None
                                 print("Ready.", flush=True)
                         except Exception as error:
                             report_error(error)
@@ -477,6 +473,7 @@ def listen_connected(
                             pressed_at = None
                             recorder = None
                             audio_path.unlink(missing_ok=True)
+                            question_path.unlink(missing_ok=True)
     finally:
         if transcript_stream is not None:
             stop_transcript_stream(transcript_stream)
@@ -490,6 +487,7 @@ def listen_connected(
                 recorder.kill()
                 recorder.wait()
         audio_path.unlink(missing_ok=True)
+        question_path.unlink(missing_ok=True)
         for keyboard in keyboards:
             keyboard.close()
 
