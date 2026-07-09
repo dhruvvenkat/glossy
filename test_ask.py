@@ -67,11 +67,10 @@ class ConfigTest(unittest.TestCase):
 
 
 class AnswerQuestionTest(unittest.TestCase):
-    @patch("builtins.print")
     @patch("ask.has_speech", return_value=True)
     @patch("ask.speak")
     @patch("builtins.print")
-    def test_transcribes_answers_and_speaks(self, _output, speak, _has_speech):
+    def test_transcribes_answers_and_speaks(self, output, speak, _has_speech):
         client = Mock()
         transcriber = Mock()
         transcriber.transcribe.return_value = (
@@ -101,7 +100,7 @@ class AnswerQuestionTest(unittest.TestCase):
             input="What is a mutex?",
             reasoning={"effort": "none"},
         )
-        speak.assert_called_once_with("A mutex permits one thread at a time.")
+        speak.assert_called_once_with("A mutex permits one thread at a time.", ())
         output.assert_called_once_with("Glossy transcript: 'What is a mutex?'", flush=True)
 
     @patch("builtins.print")
@@ -182,6 +181,38 @@ class AnswerQuestionTest(unittest.TestCase):
         self.assertEqual(piper.args[0][0:3], [ask.sys.executable, "-m", "piper"])
         self.assertEqual(piper.kwargs["input"], "A clear answer.\n")
         self.assertEqual(player.args[0][0:2], ["aplay", "--quiet"])
+
+    @patch("builtins.print")
+    @patch("ask.select.select")
+    @patch("ask.subprocess.Popen")
+    @patch("ask.subprocess.run")
+    def test_escape_stops_speech(self, run, popen, select_, output):
+        keyboard = Mock()
+        keyboard.read.return_value = [
+            SimpleNamespace(
+                type=ask.ecodes.EV_KEY,
+                code=ask.ecodes.KEY_ESC,
+                value=1,
+            )
+        ]
+        select_.return_value = ([keyboard], [], [])
+        player = Mock()
+        player.poll.return_value = None
+        popen.return_value = player
+
+        with tempfile.TemporaryDirectory() as directory:
+            voice_dir = Path(directory)
+            voice = voice_dir / "voice.onnx"
+            voice.touch()
+            (voice_dir / "selected").write_text("voice\n")
+            with patch.object(ask, "VOICE_DIR", voice_dir):
+                self.assertFalse(ask.speak("Stop talking.", [keyboard]))
+
+        run.assert_called_once()
+        popen.assert_called_once()
+        player.terminate.assert_called_once()
+        player.wait.assert_called_once_with(timeout=1)
+        output.assert_called_once_with("Glossy: speech stopped.", flush=True)
 
     @patch("ask.subprocess.run")
     def test_blips_use_requested_sounds(self, run):

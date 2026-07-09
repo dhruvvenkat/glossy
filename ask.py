@@ -232,7 +232,20 @@ def play_blip(sound):
     subprocess.run(["paplay", str(sound)], check=False)
 
 
-def speak(text):
+def speech_cancelled(keyboards):
+    readable, _, _ = select.select(keyboards, [], [], 0.05)
+    for keyboard in readable:
+        for event in keyboard.read():
+            if (
+                event.type == ecodes.EV_KEY
+                and event.code == ecodes.KEY_ESC
+                and event.value == 1
+            ):
+                return True
+    return False
+
+
+def speak(text, keyboards=()):
     selection = VOICE_DIR / "selected"
     voice = selection.read_text().strip() if selection.exists() else DEFAULT_VOICE
     voice_model = VOICE_DIR / f"{voice}.onnx"
@@ -255,7 +268,23 @@ def speak(text):
             text=True,
             check=True,
         )
-        subprocess.run(["aplay", "--quiet", str(speech_path)], check=True)
+        if not keyboards:
+            subprocess.run(["aplay", "--quiet", str(speech_path)], check=True)
+            return True
+        player = subprocess.Popen(["aplay", "--quiet", str(speech_path)])
+        while player.poll() is None:
+            if speech_cancelled(keyboards):
+                player.terminate()
+                try:
+                    player.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    player.kill()
+                    player.wait()
+                print("Glossy: speech stopped.", flush=True)
+                return False
+        if player.returncode:
+            raise subprocess.CalledProcessError(player.returncode, player.args)
+        return True
     finally:
         speech_path.unlink(missing_ok=True)
 
@@ -366,7 +395,7 @@ def stop_transcript_stream(stream):
     thread.join()
 
 
-def answer_question(client, transcriber, settings, audio_path):
+def answer_question(client, transcriber, settings, audio_path, keyboards=()):
     if not has_speech(
         audio_path,
         settings["speech_rms_threshold"],
@@ -392,14 +421,14 @@ def answer_question(client, transcriber, settings, audio_path):
     answer = client.responses.create(**request).output_text.strip()
     if not answer:
         raise RuntimeError("OpenAI returned an empty answer")
-    speak(answer)
+    speak(answer, keyboards)
     return True
 
 
-def report_error(error):
+def report_error(error, keyboards=()):
     print(f"Glossy: {error}", file=sys.stderr, flush=True)
     try:
-        speak("Glossy failed. Check the service log.")
+        speak("Glossy failed. Check the service log.", keyboards)
     except Exception:
         pass
 
@@ -455,11 +484,11 @@ def listen_connected(
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
                                 answer_question(
-                                    client, transcriber, settings, audio_path
+                                    client, transcriber, settings, audio_path, keyboards
                                 )
                                 print("Ready.", flush=True)
                         except Exception as error:
-                            report_error(error)
+                            report_error(error, keyboards)
                         finally:
                             if transcript_stream is not None:
                                 stop_transcript_stream(transcript_stream)
