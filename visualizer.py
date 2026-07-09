@@ -8,12 +8,15 @@ import tkinter as tk
 from array import array
 from pathlib import Path
 
-WIDTH = 112
-HEIGHT = 44
+WIDTH = 88
+HEIGHT = 32
 QUESTION_WIDTH = 560
 BACKGROUND = "#111827"
 BAR_COLOR = "#60a5fa"
 TEXT_COLOR = "#f9fafb"
+BAR_WIDTH = 4
+BAR_SPACING = 9
+BAR_DROP_DELAY = 0.08
 
 
 def primary_geometry(default_width, default_height):
@@ -66,25 +69,16 @@ def audio_level(path, sensitivity=1.0):
     return min(1.0, rms / 6000 * sensitivity)
 
 
-def render_question(root, question):
-    for child in root.winfo_children():
-        child.destroy()
-    width = max(220, min(QUESTION_WIDTH, root.winfo_screenwidth() - 64))
-    label = tk.Label(
-        root,
-        text=question,
-        bg=BACKGROUND,
-        fg=TEXT_COLOR,
-        font=("Sans", 11),
-        justify=tk.CENTER,
-        wraplength=width - 28,
-        padx=14,
-        pady=10,
-    )
-    label.pack(fill=tk.BOTH, expand=True)
-    root.update_idletasks()
-    height = max(HEIGHT, label.winfo_reqheight())
-    root.geometry(bottom_center(root, width, height))
+def eased(value):
+    value = max(0.0, min(1.0, value))
+    return 1 - (1 - value) ** 3
+
+
+def cascade_progress(progress, index):
+    delay = index * BAR_DROP_DELAY
+    if progress <= delay:
+        return 0.0
+    return eased((progress - delay) / (1 - delay))
 
 
 def main(audio_path, sensitivity, question_path=None):
@@ -96,30 +90,62 @@ def main(audio_path, sensitivity, question_path=None):
 
     canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg=BACKGROUND, highlightthickness=0)
     canvas.pack()
+    text = canvas.create_text(
+        WIDTH // 2,
+        10,
+        text="",
+        fill=TEXT_COLOR,
+        font=("Sans", 11),
+        justify=tk.CENTER,
+        state=tk.HIDDEN,
+        anchor=tk.N,
+    )
     bars = [
-        canvas.create_line(x, 19, x, 25, fill=BAR_COLOR, width=6, capstyle=tk.ROUND)
-        for x in (32, 44, 56, 68, 80)
+        canvas.create_line(0, 0, 0, 0, fill=BAR_COLOR, width=BAR_WIDTH, capstyle=tk.ROUND)
+        for _ in range(5)
     ]
     smoothed = 0.0
     phase = 0.0
+    drop = 0.0
 
     def animate():
-        nonlocal smoothed, phase
+        nonlocal smoothed, phase, drop
+        transcript = ""
         if question_path is not None:
             try:
-                question = question_path.read_text().strip()
+                transcript = question_path.read_text().strip()
             except OSError:
-                question = ""
-            if question:
-                render_question(root, question)
-                return
+                pass
+        drop = min(1.0, drop + 0.08) if transcript else max(0.0, drop - 0.12)
+
+        screen_width = root.winfo_screenwidth()
+        full_width = max(220, min(QUESTION_WIDTH, screen_width - 64))
+        canvas.itemconfigure(
+            text,
+            text=transcript,
+            width=full_width - 28,
+            state=tk.NORMAL if transcript else tk.HIDDEN,
+        )
+        root.update_idletasks()
+        text_box = canvas.bbox(text)
+        text_height = text_box[3] - text_box[1] if transcript and text_box else 0
+        full_height = max(82, text_height + 44)
+        expansion = eased(drop)
+        view_width = round(WIDTH + (full_width - WIDTH) * expansion)
+        view_height = round(HEIGHT + (full_height - HEIGHT) * expansion)
+        canvas.config(width=view_width, height=view_height)
+        root.geometry(bottom_center(root, view_width, view_height))
+        canvas.coords(text, view_width / 2, 10)
+
         smoothed = smoothed * 0.6 + audio_level(audio_path, sensitivity) * 0.4
         phase += 0.55
         for index, bar in enumerate(bars):
             movement = 0.75 + 0.25 * math.sin(phase + index * 0.9)
-            height = 6 + smoothed * 28 * movement
-            x = 32 + index * 12
-            canvas.coords(bar, x, 22 - height / 2, x, 22 + height / 2)
+            height = 4 + smoothed * 16 * movement
+            progress = cascade_progress(drop, index)
+            x = view_width / 2 + (index - 2) * BAR_SPACING
+            y = HEIGHT / 2 + (view_height - 18 - HEIGHT / 2) * progress
+            canvas.coords(bar, x, y - height / 2, x, y + height / 2)
         root.after(50, animate)
 
     animate()
