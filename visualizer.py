@@ -10,8 +10,10 @@ from pathlib import Path
 
 WIDTH = 112
 HEIGHT = 44
+QUESTION_WIDTH = 560
 BACKGROUND = "#111827"
 BAR_COLOR = "#60a5fa"
+TEXT_COLOR = "#f9fafb"
 
 
 def primary_geometry(default_width, default_height):
@@ -35,6 +37,15 @@ def primary_geometry(default_width, default_height):
     return 0, 0, default_width, default_height
 
 
+def bottom_center(root, width, height):
+    screen_x, screen_y, screen_width, screen_height = primary_geometry(
+        root.winfo_screenwidth(), root.winfo_screenheight()
+    )
+    x = screen_x + (screen_width - width) // 2
+    y = screen_y + screen_height - height - 48
+    return f"{width}x{height}+{x}+{y}"
+
+
 def audio_level(path, sensitivity=1.0):
     try:
         size = path.stat().st_size
@@ -55,17 +66,33 @@ def audio_level(path, sensitivity=1.0):
     return min(1.0, rms / 6000 * sensitivity)
 
 
-def main(audio_path, sensitivity):
+def render_question(root, question):
+    for child in root.winfo_children():
+        child.destroy()
+    width = max(220, min(QUESTION_WIDTH, root.winfo_screenwidth() - 64))
+    label = tk.Label(
+        root,
+        text=question,
+        bg=BACKGROUND,
+        fg=TEXT_COLOR,
+        font=("Sans", 11),
+        justify=tk.CENTER,
+        wraplength=width - 28,
+        padx=14,
+        pady=10,
+    )
+    label.pack(fill=tk.BOTH, expand=True)
+    root.update_idletasks()
+    height = max(HEIGHT, label.winfo_reqheight())
+    root.geometry(bottom_center(root, width, height))
+
+
+def main(audio_path, sensitivity, question_path=None):
     root = tk.Tk()
     root.overrideredirect(True)
     root.attributes("-topmost", True)
     root.attributes("-alpha", 0.92)
-    screen_x, screen_y, screen_width, screen_height = primary_geometry(
-        root.winfo_screenwidth(), root.winfo_screenheight()
-    )
-    x = screen_x + (screen_width - WIDTH) // 2
-    y = screen_y + screen_height - HEIGHT - 48
-    root.geometry(f"{WIDTH}x{HEIGHT}+{x}+{y}")
+    root.geometry(bottom_center(root, WIDTH, HEIGHT))
 
     canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg=BACKGROUND, highlightthickness=0)
     canvas.pack()
@@ -78,6 +105,14 @@ def main(audio_path, sensitivity):
 
     def animate():
         nonlocal smoothed, phase
+        if question_path is not None:
+            try:
+                question = question_path.read_text().strip()
+            except OSError:
+                question = ""
+            if question:
+                render_question(root, question)
+                return
         smoothed = smoothed * 0.6 + audio_level(audio_path, sensitivity) * 0.4
         phase += 0.55
         for index, bar in enumerate(bars):
@@ -92,6 +127,11 @@ def main(audio_path, sensitivity):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: visualizer.py AUDIO_FILE SENSITIVITY")
-    main(Path(sys.argv[1]), float(sys.argv[2]))
+    if len(sys.argv) in {3, 4}:
+        main(
+            Path(sys.argv[1]),
+            float(sys.argv[2]),
+            Path(sys.argv[3]) if len(sys.argv) == 4 else None,
+        )
+    else:
+        raise SystemExit("usage: visualizer.py AUDIO_FILE SENSITIVITY [QUESTION_FILE]")
