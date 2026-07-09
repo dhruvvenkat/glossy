@@ -116,10 +116,12 @@ class AnswerQuestionTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "question.wav"
+            transcript = Path(directory) / "question.txt"
             with wave.open(str(audio), "wb") as recording:
                 recording.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
                 recording.writeframes(array("h", [1000, -1000] * 1600).tobytes())
-            ask.stream_transcript(transcriber, TEST_SETTINGS, audio, stopped)
+            ask.stream_transcript(transcriber, TEST_SETTINGS, audio, stopped, transcript)
+            self.assertEqual(transcript.read_text(), "What is a mutex?\n")
 
         output.assert_has_calls(
             [

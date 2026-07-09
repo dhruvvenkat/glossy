@@ -314,7 +314,7 @@ def transcribe_audio(transcriber, settings, audio_path):
     return "".join(segment.text for segment in segments).strip()
 
 
-def stream_transcript(transcriber, settings, audio_path, stopped):
+def stream_transcript(transcriber, settings, audio_path, stopped, transcript_path=None):
     preview_path = Path(tempfile.gettempdir()) / f"glossy-preview-{os.getpid()}.wav"
     previous = ""
     line_width = 0
@@ -339,6 +339,8 @@ def stream_transcript(transcriber, settings, audio_path, stopped):
                 )
                 return
             if transcript and transcript != previous:
+                if transcript_path is not None:
+                    transcript_path.write_text(transcript + "\n")
                 line = f"\rGlossy heard: {transcript}"
                 print(line + " " * max(0, line_width - len(line)), end="", flush=True)
                 line_width = len(line)
@@ -349,11 +351,11 @@ def stream_transcript(transcriber, settings, audio_path, stopped):
         preview_path.unlink(missing_ok=True)
 
 
-def start_transcript_stream(transcriber, settings, audio_path):
+def start_transcript_stream(transcriber, settings, audio_path, transcript_path=None):
     stopped = threading.Event()
     thread = threading.Thread(
         target=stream_transcript,
-        args=(transcriber, settings, audio_path, stopped),
+        args=(transcriber, settings, audio_path, stopped, transcript_path),
         daemon=True,
     )
     thread.start()
@@ -427,7 +429,7 @@ def listen_connected(
                     question_path.unlink(missing_ok=True)
                     recorder = start_recording(audio_path)
                     transcript_stream = start_transcript_stream(
-                        transcriber, settings, audio_path
+                        transcriber, settings, audio_path, question_path
                     )
                     visualizer = start_visualizer(
                         audio_path, settings["visualizer_sensitivity"], question_path
