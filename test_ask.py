@@ -85,6 +85,7 @@ class AnswerQuestionTest(unittest.TestCase):
             audio = Path(directory) / "question.wav"
             audio.write_bytes(b"RIFF fake audio")
             ask.answer_question(client, transcriber, TEST_SETTINGS, audio)
+            self.assertEqual(audio.with_suffix(".txt").read_text(), "What is a mutex?\n")
 
         transcriber.transcribe.assert_called_once_with(
             str(audio),
@@ -101,7 +102,7 @@ class AnswerQuestionTest(unittest.TestCase):
             reasoning={"effort": "none"},
         )
         speak.assert_called_once_with("A mutex permits one thread at a time.", ())
-        output.assert_called_once_with("Glossy transcript: 'What is a mutex?'", flush=True)
+        output.assert_called_once_with("Glossy question: 'What is a mutex?'", flush=True)
 
     @patch("builtins.print")
     def test_streams_live_transcript(self, output):
@@ -115,10 +116,12 @@ class AnswerQuestionTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "question.wav"
+            transcript = Path(directory) / "question.txt"
             with wave.open(str(audio), "wb") as recording:
                 recording.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
                 recording.writeframes(array("h", [1000, -1000] * 1600).tobytes())
-            ask.stream_transcript(transcriber, TEST_SETTINGS, audio, stopped)
+            ask.stream_transcript(transcriber, TEST_SETTINGS, audio, stopped, transcript)
+            self.assertEqual(transcript.read_text(), "What is a mutex?\n")
 
         output.assert_has_calls(
             [
@@ -229,9 +232,10 @@ class AnswerQuestionTest(unittest.TestCase):
     @patch("ask.subprocess.Popen")
     def test_visualizer_uses_recording_file(self, popen):
         audio = Path("question.wav")
-        ask.start_visualizer(audio, 4.0)
+        question = Path("question.txt")
+        ask.start_visualizer(audio, 4.0, question)
         popen.assert_called_once_with(
-            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio), "4.0"]
+            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio), "4.0", str(question)]
         )
 
 
@@ -325,7 +329,8 @@ class InputDelayTest(unittest.TestCase):
             lambda *_args: order.append("transcript-start") or transcript_stream
         )
         start_visualizer.side_effect = (
-            lambda _path, _sensitivity: order.append("visualizer-start") or visualizer
+            lambda _path, _sensitivity, _question_path: order.append("visualizer-start")
+            or visualizer
         )
         stop_visualizer.side_effect = lambda _process: order.append("visualizer-stop")
         stop_recording.side_effect = lambda *_args: order.append("stop")
@@ -359,9 +364,9 @@ class InputDelayTest(unittest.TestCase):
                 "visualizer-start",
                 "stop",
                 "transcript-stop",
-                "visualizer-stop",
                 "blip-reversed.mp3",
                 "answer",
+                "visualizer-stop",
             ],
         )
         stop_visualizer.assert_called_once_with(visualizer)

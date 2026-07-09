@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+from evdev import InputDevice, ecodes, list_devices
+from faster_whisper import WhisperModel
+from openai import OpenAI
+import webrtcvad
 
 import errno
 import json
@@ -17,11 +21,6 @@ from pathlib import Path
 
 MODEL_DIR = Path(__file__).parent / "models"
 os.environ["HF_HOME"] = str(MODEL_DIR / ".cache")
-
-from evdev import InputDevice, ecodes, list_devices
-from faster_whisper import WhisperModel
-from openai import OpenAI
-import webrtcvad
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 CONFIG_FILE = Path(__file__).parent / "config.json"
@@ -212,10 +211,11 @@ def stop_recording(recorder, path):
         raise RuntimeError(error.strip() or "No audio was recorded")
 
 
-def start_visualizer(audio_path, sensitivity):
-    return subprocess.Popen(
-        [sys.executable, str(VISUALIZER_SCRIPT), str(audio_path), str(sensitivity)]
-    )
+def start_visualizer(audio_path, sensitivity, question_path=None):
+    command = [sys.executable, str(VISUALIZER_SCRIPT), str(audio_path), str(sensitivity)]
+    if question_path is not None:
+        command.append(str(question_path))
+    return subprocess.Popen(command)
 
 
 def stop_visualizer(visualizer):
@@ -343,7 +343,7 @@ def transcribe_audio(transcriber, settings, audio_path):
     return "".join(segment.text for segment in segments).strip()
 
 
-def stream_transcript(transcriber, settings, audio_path, stopped):
+def stream_transcript(transcriber, settings, audio_path, stopped, transcript_path=None):
     preview_path = Path(tempfile.gettempdir()) / f"glossy-preview-{os.getpid()}.wav"
     previous = ""
     line_width = 0
@@ -368,6 +368,8 @@ def stream_transcript(transcriber, settings, audio_path, stopped):
                 )
                 return
             if transcript and transcript != previous:
+                if transcript_path is not None:
+                    transcript_path.write_text(transcript + "\n")
                 line = f"\rGlossy heard: {transcript}"
                 print(line + " " * max(0, line_width - len(line)), end="", flush=True)
                 line_width = len(line)
@@ -378,11 +380,11 @@ def stream_transcript(transcriber, settings, audio_path, stopped):
         preview_path.unlink(missing_ok=True)
 
 
-def start_transcript_stream(transcriber, settings, audio_path):
+def start_transcript_stream(transcriber, settings, audio_path, transcript_path=None):
     stopped = threading.Event()
     thread = threading.Thread(
         target=stream_transcript,
-        args=(transcriber, settings, audio_path, stopped),
+        args=(transcriber, settings, audio_path, stopped, transcript_path),
         daemon=True,
     )
     thread.start()
@@ -409,7 +411,8 @@ def answer_question(client, transcriber, settings, audio_path, keyboards=()):
     transcript = transcribe_audio(transcriber, settings, audio_path)
     if not transcript:
         raise RuntimeError("Local Whisper returned an empty transcript")
-    print(f"Glossy transcript: {transcript!r}", flush=True)
+    print(f"Glossy question: {transcript!r}", flush=True)
+    audio_path.with_suffix(".txt").write_text(transcript + "\n")
 
     request = dict(
         model=settings["model"],
@@ -437,6 +440,7 @@ def listen_connected(
     client, transcriber, settings, keyboards, button_code, button_name
 ):
     audio_path = Path(tempfile.gettempdir()) / f"glossy-{os.getpid()}.wav"
+    question_path = audio_path.with_suffix(".txt")
     recorder = None
     transcript_stream = None
     visualizer = None
@@ -451,12 +455,13 @@ def listen_connected(
                 remaining = settings["hold_seconds"] - held_for
                 if remaining <= 0:
                     play_blip(START_BLIP_SOUND)
+                    question_path.unlink(missing_ok=True)
                     recorder = start_recording(audio_path)
                     transcript_stream = start_transcript_stream(
-                        transcriber, settings, audio_path
+                        transcriber, settings, audio_path, question_path
                     )
                     visualizer = start_visualizer(
-                        audio_path, settings["visualizer_sensitivity"]
+                        audio_path, settings["visualizer_sensitivity"], question_path
                     )
                     print("Recording...", flush=True)
                 else:
@@ -479,13 +484,13 @@ def listen_connected(
                                 stop_recording(recorder, audio_path)
                                 stop_transcript_stream(transcript_stream)
                                 transcript_stream = None
-                                stop_visualizer(visualizer)
-                                visualizer = None
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
                                 answer_question(
                                     client, transcriber, settings, audio_path, keyboards
                                 )
+                                stop_visualizer(visualizer)
+                                visualizer = None
                                 print("Ready.", flush=True)
                         except Exception as error:
                             report_error(error, keyboards)
@@ -499,6 +504,7 @@ def listen_connected(
                             pressed_at = None
                             recorder = None
                             audio_path.unlink(missing_ok=True)
+                            question_path.unlink(missing_ok=True)
     finally:
         if transcript_stream is not None:
             stop_transcript_stream(transcript_stream)
@@ -512,6 +518,7 @@ def listen_connected(
                 recorder.kill()
                 recorder.wait()
         audio_path.unlink(missing_ok=True)
+        question_path.unlink(missing_ok=True)
         for keyboard in keyboards:
             keyboard.close()
 
