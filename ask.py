@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+from evdev import InputDevice, ecodes, list_devices
+from faster_whisper import WhisperModel
+from openai import OpenAI
+import webrtcvad
 
 import errno
 import json
@@ -17,11 +21,6 @@ from pathlib import Path
 
 MODEL_DIR = Path(__file__).parent / "models"
 os.environ["HF_HOME"] = str(MODEL_DIR / ".cache")
-
-from evdev import InputDevice, ecodes, list_devices
-from faster_whisper import WhisperModel
-from openai import OpenAI
-import webrtcvad
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
 CONFIG_FILE = Path(__file__).parent / "config.json"
@@ -218,6 +217,10 @@ def start_visualizer(audio_path, sensitivity):
     )
 
 
+def start_question_overlay(question):
+    return subprocess.Popen([sys.executable, str(VISUALIZER_SCRIPT), "--question", question])
+
+
 def stop_visualizer(visualizer):
     if visualizer.poll() is None:
         visualizer.terminate()
@@ -380,19 +383,23 @@ def answer_question(client, transcriber, settings, audio_path):
     transcript = transcribe_audio(transcriber, settings, audio_path)
     if not transcript:
         raise RuntimeError("Local Whisper returned an empty transcript")
-    print(f"Glossy transcript: {transcript!r}", flush=True)
+    print(f"Glossy question: {transcript!r}", flush=True)
+    question_overlay = start_question_overlay(transcript)
 
-    request = dict(
-        model=settings["model"],
-        instructions=SYSTEM_PROMPT,
-        input=transcript,
-    )
-    if settings["reasoning_effort"] is not None:
-        request["reasoning"] = {"effort": settings["reasoning_effort"]}
-    answer = client.responses.create(**request).output_text.strip()
-    if not answer:
-        raise RuntimeError("OpenAI returned an empty answer")
-    speak(answer)
+    try:
+        request = dict(
+            model=settings["model"],
+            instructions=SYSTEM_PROMPT,
+            input=transcript,
+        )
+        if settings["reasoning_effort"] is not None:
+            request["reasoning"] = {"effort": settings["reasoning_effort"]}
+        answer = client.responses.create(**request).output_text.strip()
+        if not answer:
+            raise RuntimeError("OpenAI returned an empty answer")
+        speak(answer)
+    finally:
+        stop_visualizer(question_overlay)
     return True
 
 

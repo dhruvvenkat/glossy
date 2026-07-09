@@ -67,13 +67,18 @@ class ConfigTest(unittest.TestCase):
 
 
 class AnswerQuestionTest(unittest.TestCase):
-    @patch("builtins.print")
+    @patch("ask.stop_visualizer")
+    @patch("ask.start_question_overlay")
     @patch("ask.has_speech", return_value=True)
     @patch("ask.speak")
     @patch("builtins.print")
-    def test_transcribes_answers_and_speaks(self, _output, speak, _has_speech):
+    def test_transcribes_answers_and_speaks(
+        self, output, speak, _has_speech, start_question_overlay, stop_visualizer
+    ):
         client = Mock()
         transcriber = Mock()
+        question_overlay = Mock()
+        start_question_overlay.return_value = question_overlay
         transcriber.transcribe.return_value = (
             [SimpleNamespace(text="What is a mutex?")],
             SimpleNamespace(),
@@ -102,7 +107,9 @@ class AnswerQuestionTest(unittest.TestCase):
             reasoning={"effort": "none"},
         )
         speak.assert_called_once_with("A mutex permits one thread at a time.")
-        output.assert_called_once_with("Glossy transcript: 'What is a mutex?'", flush=True)
+        output.assert_called_once_with("Glossy question: 'What is a mutex?'", flush=True)
+        start_question_overlay.assert_called_once_with("What is a mutex?")
+        stop_visualizer.assert_called_once_with(question_overlay)
 
     @patch("builtins.print")
     def test_streams_live_transcript(self, output):
@@ -201,6 +208,13 @@ class AnswerQuestionTest(unittest.TestCase):
         ask.start_visualizer(audio, 4.0)
         popen.assert_called_once_with(
             [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), str(audio), "4.0"]
+        )
+
+    @patch("ask.subprocess.Popen")
+    def test_question_overlay_uses_visualizer_text_mode(self, popen):
+        ask.start_question_overlay("What is a mutex?")
+        popen.assert_called_once_with(
+            [ask.sys.executable, str(ask.VISUALIZER_SCRIPT), "--question", "What is a mutex?"]
         )
 
 
