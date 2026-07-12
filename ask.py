@@ -397,8 +397,16 @@ def stop_transcript_stream(stream):
     thread.join()
 
 
-def answer_question(client, transcriber, settings, audio_path, keyboards=()):
-    if not has_speech(
+def answer_question(
+    client, transcriber, settings, audio_path, keyboards=(), transcript_path=None
+):
+    live_transcript = ""
+    if transcript_path is not None:
+        try:
+            live_transcript = transcript_path.read_text().strip()
+        except OSError:
+            pass
+    if not live_transcript and not has_speech(
         audio_path,
         settings["speech_rms_threshold"],
         settings["minimum_speech_seconds"],
@@ -487,7 +495,12 @@ def listen_connected(
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
                                 answer_question(
-                                    client, transcriber, settings, audio_path, keyboards
+                                    client,
+                                    transcriber,
+                                    settings,
+                                    audio_path,
+                                    keyboards,
+                                    question_path,
                                 )
                                 stop_visualizer(visualizer)
                                 visualizer = None

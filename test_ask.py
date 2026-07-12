@@ -146,6 +146,38 @@ class AnswerQuestionTest(unittest.TestCase):
         transcriber.transcribe.assert_not_called()
         client.responses.create.assert_not_called()
 
+    @patch("ask.has_speech", return_value=False)
+    @patch("ask.speak")
+    def test_live_transcript_bypasses_false_vad_rejection(self, speak, has_speech):
+        client = Mock()
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="What is a mutex?")],
+            SimpleNamespace(),
+        )
+        client.responses.create.return_value = SimpleNamespace(
+            output_text="A mutex permits one thread at a time."
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            transcript = Path(directory) / "question.txt"
+            audio.write_bytes(b"RIFF fake audio")
+            transcript.write_text("What is a mutex?\n")
+            self.assertTrue(
+                ask.answer_question(
+                    client,
+                    transcriber,
+                    TEST_SETTINGS,
+                    audio,
+                    transcript_path=transcript,
+                )
+            )
+
+        has_speech.assert_not_called()
+        client.responses.create.assert_called_once()
+        speak.assert_called_once_with("A mutex permits one thread at a time.", ())
+
     @patch("ask.webrtcvad.Vad")
     @patch("builtins.print")
     def test_detects_sustained_local_audio(self, _print, vad):
