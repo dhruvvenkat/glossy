@@ -20,6 +20,8 @@ BAR_DROP_DELAY = 0.08
 TEXT_PAD_X = 16
 TEXT_TOP = 7
 BAR_BOTTOM_PAD = 12
+CORNER_RADIUS = 12
+TRANSPARENT_COLOR = "#010101"
 
 
 def primary_geometry(default_width, default_height):
@@ -96,15 +98,38 @@ def transcript_size(text_box, screen_width):
     )
 
 
+def rounded_box_points(width, height, radius=CORNER_RADIUS):
+    radius = min(radius, width / 2, height / 2)
+    points = []
+    for center_x, center_y, start in (
+        (radius, radius, 180),
+        (width - radius, radius, 270),
+        (width - radius, height - radius, 0),
+        (radius, height - radius, 90),
+    ):
+        for step in range(5):
+            angle = math.radians(start + step * 90 / 4)
+            points.extend((center_x + radius * math.cos(angle), center_y + radius * math.sin(angle)))
+    return points
+
+
 def main(audio_path, sensitivity, question_path=None):
     root = tk.Tk()
     root.overrideredirect(True)
     root.attributes("-topmost", True)
     root.attributes("-alpha", 0.92)
+    try:
+        root.attributes("-transparentcolor", TRANSPARENT_COLOR)
+        canvas_background = TRANSPARENT_COLOR
+    except tk.TclError:
+        canvas_background = BACKGROUND
     root.geometry(bottom_center(root, WIDTH, HEIGHT))
 
-    canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg=BACKGROUND, highlightthickness=0)
+    canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg=canvas_background, highlightthickness=0)
     canvas.pack()
+    panel = canvas.create_polygon(
+        *rounded_box_points(WIDTH, HEIGHT), fill=BACKGROUND, outline=""
+    )
     text = canvas.create_text(
         WIDTH // 2,
         TEXT_TOP,
@@ -149,6 +174,7 @@ def main(audio_path, sensitivity, question_path=None):
         view_width = round(WIDTH + (full_width - WIDTH) * expansion)
         view_height = round(HEIGHT + (full_height - HEIGHT) * expansion)
         canvas.config(width=view_width, height=view_height)
+        canvas.coords(panel, *rounded_box_points(view_width, view_height))
         root.geometry(bottom_center(root, view_width, view_height))
         canvas.itemconfigure(text, width=max(1, view_width - TEXT_PAD_X * 2))
         canvas.coords(text, view_width / 2, TEXT_TOP)
