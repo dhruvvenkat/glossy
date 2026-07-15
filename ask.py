@@ -245,7 +245,7 @@ def speech_cancelled(keyboards):
     return False
 
 
-def speak(text, keyboards=()):
+def speak(text, keyboards=(), speaking_path=None):
     selection = VOICE_DIR / "selected"
     voice = selection.read_text().strip() if selection.exists() else DEFAULT_VOICE
     voice_model = VOICE_DIR / f"{voice}.onnx"
@@ -269,8 +269,12 @@ def speak(text, keyboards=()):
             check=True,
         )
         if not keyboards:
+            if speaking_path is not None:
+                speaking_path.touch()
             subprocess.run(["aplay", "--quiet", str(speech_path)], check=True)
             return True
+        if speaking_path is not None:
+            speaking_path.touch()
         player = subprocess.Popen(["aplay", "--quiet", str(speech_path)])
         while player.poll() is None:
             if speech_cancelled(keyboards):
@@ -286,6 +290,8 @@ def speak(text, keyboards=()):
             raise subprocess.CalledProcessError(player.returncode, player.args)
         return True
     finally:
+        if speaking_path is not None:
+            speaking_path.unlink(missing_ok=True)
         speech_path.unlink(missing_ok=True)
 
 
@@ -398,7 +404,13 @@ def stop_transcript_stream(stream):
 
 
 def answer_question(
-    client, transcriber, settings, audio_path, keyboards=(), transcript_path=None
+    client,
+    transcriber,
+    settings,
+    audio_path,
+    keyboards=(),
+    transcript_path=None,
+    speaking_path=None,
 ):
     live_transcript = ""
     if transcript_path is not None:
@@ -432,7 +444,10 @@ def answer_question(
     answer = client.responses.create(**request).output_text.strip()
     if not answer:
         raise RuntimeError("OpenAI returned an empty answer")
-    speak(answer, keyboards)
+    if speaking_path is None:
+        speak(answer, keyboards)
+    else:
+        speak(answer, keyboards, speaking_path)
     return True
 
 
@@ -464,6 +479,7 @@ def listen_connected(
                 if remaining <= 0:
                     play_blip(START_BLIP_SOUND)
                     question_path.unlink(missing_ok=True)
+                    audio_path.with_suffix(".speaking").unlink(missing_ok=True)
                     recorder = start_recording(audio_path)
                     transcript_stream = start_transcript_stream(
                         transcriber, settings, audio_path, question_path
@@ -501,6 +517,7 @@ def listen_connected(
                                     audio_path,
                                     keyboards,
                                     question_path,
+                                    audio_path.with_suffix(".speaking"),
                                 )
                                 stop_visualizer(visualizer)
                                 visualizer = None
@@ -518,6 +535,7 @@ def listen_connected(
                             recorder = None
                             audio_path.unlink(missing_ok=True)
                             question_path.unlink(missing_ok=True)
+                            audio_path.with_suffix(".speaking").unlink(missing_ok=True)
     finally:
         if transcript_stream is not None:
             stop_transcript_stream(transcript_stream)
@@ -532,6 +550,7 @@ def listen_connected(
                 recorder.wait()
         audio_path.unlink(missing_ok=True)
         question_path.unlink(missing_ok=True)
+        audio_path.with_suffix(".speaking").unlink(missing_ok=True)
         for keyboard in keyboards:
             keyboard.close()
 

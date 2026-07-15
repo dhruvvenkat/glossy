@@ -14,6 +14,7 @@ HEIGHT = 32
 QUESTION_WIDTH = 560
 BACKGROUND = "#111827"
 BAR_COLOR = "#60a5fa"
+SPEECH_COLOR = "#facc15"
 TEXT_COLOR = "#f9fafb"
 BAR_WIDTH = 4
 BAR_SPACING = 9
@@ -167,10 +168,11 @@ def main(audio_path, sensitivity, question_path=None):
     text_fade = 1.0
     last_frame = time.monotonic()
     rendered_size = (WIDTH, HEIGHT)
+    current_bar_color = BAR_COLOR
 
     def animate():
         nonlocal last_frame, smoothed, phase, drop, text_fade, shown_transcript
-        nonlocal rendered_size, view_width, view_height
+        nonlocal current_bar_color, rendered_size, view_width, view_height
         now = time.monotonic()
         elapsed = min(0.1, now - last_frame)
         last_frame = now
@@ -217,6 +219,16 @@ def main(audio_path, sensitivity, question_path=None):
 
         smoothed = smoothed * 0.6 + audio_level(audio_path, sensitivity) * 0.4
         phase += 0.55
+        bar_color = (
+            SPEECH_COLOR
+            if question_path is not None
+            and question_path.with_suffix(".speaking").exists()
+            else BAR_COLOR
+        )
+        if bar_color != current_bar_color:
+            current_bar_color = bar_color
+            for bar in bars:
+                canvas.itemconfigure(bar, fill=bar_color)
         for index, bar in enumerate(bars):
             movement = 0.75 + 0.25 * math.sin(phase + index * 0.9)
             height = 4 + smoothed * 16 * movement
