@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from visualizer import audio_level, cascade_progress, primary_geometry, transcript_size
+from visualizer import audio_level, blend_color, cascade_progress, primary_geometry, transcript_size
 
 
 class AudioLevelTest(unittest.TestCase):
@@ -32,6 +32,9 @@ class AudioLevelTest(unittest.TestCase):
 
     def test_transcript_box_fits_text_tightly(self):
         self.assertEqual(transcript_size((0, 0, 300, 17), 1920), (332, 55))
+
+    def test_text_fade_blends_colors(self):
+        self.assertEqual(blend_color("#000000", "#ffffff", 0.5), "#808080")
 
 
 if __name__ == "__main__":

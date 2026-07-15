@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import tkinter as tk
+import time
 from array import array
 from pathlib import Path
 
@@ -22,6 +23,9 @@ TEXT_TOP = 7
 BAR_BOTTOM_PAD = 12
 CORNER_RADIUS = 12
 TRANSPARENT_COLOR = "#010101"
+DROP_SECONDS = 0.4
+TEXT_FADE_SECONDS = 0.12
+FRAME_DELAY_MS = 16
 
 
 def primary_geometry(default_width, default_height):
@@ -113,6 +117,16 @@ def rounded_box_points(width, height, radius=CORNER_RADIUS):
     return points
 
 
+def blend_color(start, end, progress):
+    progress = max(0.0, min(1.0, progress))
+    start_rgb = tuple(int(start[index : index + 2], 16) for index in (1, 3, 5))
+    end_rgb = tuple(int(end[index : index + 2], 16) for index in (1, 3, 5))
+    return "#" + "".join(
+        f"{round(left + (right - left) * progress):02x}"
+        for left, right in zip(start_rgb, end_rgb)
+    )
+
+
 def main(audio_path, sensitivity, question_path=None):
     root = tk.Tk()
     root.overrideredirect(True)
@@ -147,37 +161,59 @@ def main(audio_path, sensitivity, question_path=None):
     smoothed = 0.0
     phase = 0.0
     drop = 0.0
+    view_width = float(WIDTH)
+    view_height = float(HEIGHT)
+    shown_transcript = ""
+    text_fade = 1.0
+    last_frame = time.monotonic()
+    rendered_size = (WIDTH, HEIGHT)
 
     def animate():
-        nonlocal smoothed, phase, drop
+        nonlocal last_frame, smoothed, phase, drop, text_fade, shown_transcript
+        nonlocal rendered_size, view_width, view_height
+        now = time.monotonic()
+        elapsed = min(0.1, now - last_frame)
+        last_frame = now
         transcript = ""
         if question_path is not None:
             try:
                 transcript = question_path.read_text().strip()
             except OSError:
                 pass
-        drop = min(1.0, drop + 0.08) if transcript else max(0.0, drop - 0.12)
+        drop_change = elapsed / DROP_SECONDS
+        drop = min(1.0, drop + drop_change) if transcript else max(0.0, drop - drop_change)
 
         screen_width = root.winfo_screenwidth()
         max_width = max(220, min(QUESTION_WIDTH, screen_width - 64))
+        if transcript != shown_transcript:
+            shown_transcript = transcript
+            text_fade = 0.0 if transcript else 1.0
+            canvas.itemconfigure(text, text=transcript, state=tk.NORMAL if transcript else tk.HIDDEN)
+        text_fade = min(1.0, text_fade + elapsed / TEXT_FADE_SECONDS)
         canvas.itemconfigure(
             text,
-            text=transcript,
+            fill=blend_color(BACKGROUND, TEXT_COLOR, text_fade),
             width=max_width - TEXT_PAD_X * 2,
-            state=tk.NORMAL if transcript else tk.HIDDEN,
         )
         root.update_idletasks()
         full_width, full_height = transcript_size(
             canvas.bbox(text) if transcript else None, screen_width
         )
         expansion = eased(drop)
-        view_width = round(WIDTH + (full_width - WIDTH) * expansion)
-        view_height = round(HEIGHT + (full_height - HEIGHT) * expansion)
-        canvas.config(width=view_width, height=view_height)
-        canvas.coords(panel, *rounded_box_points(view_width, view_height))
-        root.geometry(bottom_center(root, view_width, view_height))
-        canvas.itemconfigure(text, width=max(1, view_width - TEXT_PAD_X * 2))
-        canvas.coords(text, view_width / 2, TEXT_TOP)
+        target_width = WIDTH + (full_width - WIDTH) * expansion
+        target_height = HEIGHT + (full_height - HEIGHT) * expansion
+        smoothing = 1 - math.exp(-elapsed / 0.12)
+        view_width += (target_width - view_width) * smoothing
+        view_height += (target_height - view_height) * smoothing
+        render_width = round(view_width)
+        render_height = round(view_height)
+        if (render_width, render_height) != rendered_size:
+            rendered_size = (render_width, render_height)
+            canvas.config(width=render_width, height=render_height)
+            canvas.coords(panel, *rounded_box_points(render_width, render_height))
+            root.geometry(bottom_center(root, render_width, render_height))
+            canvas.itemconfigure(text, width=max(1, render_width - TEXT_PAD_X * 2))
+            canvas.coords(text, render_width / 2, TEXT_TOP)
 
         smoothed = smoothed * 0.6 + audio_level(audio_path, sensitivity) * 0.4
         phase += 0.55
@@ -185,10 +221,10 @@ def main(audio_path, sensitivity, question_path=None):
             movement = 0.75 + 0.25 * math.sin(phase + index * 0.9)
             height = 4 + smoothed * 16 * movement
             progress = cascade_progress(drop, index)
-            x = view_width / 2 + (index - 2) * BAR_SPACING
-            y = HEIGHT / 2 + (view_height - BAR_BOTTOM_PAD - HEIGHT / 2) * progress
+            x = render_width / 2 + (index - 2) * BAR_SPACING
+            y = HEIGHT / 2 + (render_height - BAR_BOTTOM_PAD - HEIGHT / 2) * progress
             canvas.coords(bar, x, y - height / 2, x, y + height / 2)
-        root.after(50, animate)
+        root.after(FRAME_DELAY_MS, animate)
 
     animate()
     root.mainloop()
