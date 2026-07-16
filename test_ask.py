@@ -271,6 +271,180 @@ class AnswerQuestionTest(unittest.TestCase):
         )
 
 
+class ThreadModeTest(unittest.TestCase):
+    def test_persists_and_switches_threads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ask.ThreadStore(directory)
+            first = store.create("Operating Systems")
+            store.create("Compilers")
+            selected = store.activate("operating systems")
+
+            reloaded = ask.ThreadStore(directory)
+            self.assertEqual(selected["id"], first["id"])
+            self.assertEqual(reloaded.current()["name"], "Operating Systems")
+            self.assertEqual(
+                [thread["name"] for thread in reloaded.list()],
+                ["Compilers", "Operating Systems"],
+            )
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                reloaded.create("OPERATING SYSTEMS")
+
+    def test_voice_commands_control_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ask.ThreadStore(directory)
+            self.assertEqual(
+                ask.handle_thread_command("threads mode.", store),
+                "No thread is selected. Say new thread followed by a name.",
+            )
+            self.assertEqual(
+                ask.handle_thread_command("New thread Operating Systems.", store),
+                "Started thread Operating Systems.",
+            )
+            self.assertEqual(
+                ask.handle_thread_command("exit threads mode", store),
+                "Threads mode is off.",
+            )
+            self.assertIsNone(store.current())
+            self.assertEqual(
+                ask.handle_thread_command("threads mode", store),
+                "Threads mode is on for Operating Systems.",
+            )
+
+    @patch("ask.has_speech", return_value=True)
+    @patch("ask.speak")
+    def test_thread_command_bypasses_openai(self, speak, _has_speech):
+        client = Mock()
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="New thread Operating Systems.")],
+            SimpleNamespace(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            audio.write_bytes(b"RIFF fake audio")
+            store = ask.ThreadStore(Path(directory) / "threads")
+            self.assertTrue(
+                ask.answer_question(
+                    client,
+                    transcriber,
+                    TEST_SETTINGS,
+                    audio,
+                    thread_store=store,
+                )
+            )
+            self.assertEqual(store.current()["name"], "Operating Systems")
+
+        client.responses.create.assert_not_called()
+        speak.assert_called_once_with("Started thread Operating Systems.", ())
+
+    @patch("ask.has_speech", return_value=True)
+    @patch("ask.speak")
+    def test_thread_context_is_sent_and_saved(self, speak, _has_speech):
+        client = Mock()
+        client.responses.create.return_value = SimpleNamespace(
+            output_text="It prevents races around shared state."
+        )
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="Why do we need a mutex?")],
+            SimpleNamespace(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            audio.write_bytes(b"RIFF fake audio")
+            store = ask.ThreadStore(Path(directory) / "threads")
+            store.create("Operating Systems")
+            store.append_turn("What is a mutex?", "A mutual-exclusion lock.")
+            ask.answer_question(
+                client,
+                transcriber,
+                TEST_SETTINGS,
+                audio,
+                thread_store=store,
+            )
+
+            request = client.responses.create.call_args.kwargs
+            self.assertIn(ask.THREAD_PROMPT, request["instructions"])
+            self.assertIn("Reader: What is a mutex?", request["input"])
+            self.assertIn("Current question:\nWhy do we need a mutex?", request["input"])
+            self.assertEqual(len(store.current()["turns"]), 2)
+
+        speak.assert_called_once_with("It prevents races around shared state.", ())
+
+    @patch("ask.has_speech", return_value=True)
+    @patch("ask.speak")
+    def test_summarizes_every_five_new_turns(self, _speak, _has_speech):
+        client = Mock()
+        client.responses.create.side_effect = [
+            SimpleNamespace(output_text="The fifth answer."),
+            SimpleNamespace(output_text="The reader is studying concurrency."),
+        ]
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="Question five?")],
+            SimpleNamespace(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            audio.write_bytes(b"RIFF fake audio")
+            store = ask.ThreadStore(Path(directory) / "threads")
+            store.create("Operating Systems")
+            for number in range(4):
+                store.append_turn(f"Question {number}?", f"Answer {number}.")
+            ask.answer_question(
+                client,
+                transcriber,
+                TEST_SETTINGS,
+                audio,
+                thread_store=store,
+            )
+
+            thread = store.current()
+            self.assertEqual(thread["summary"], "The reader is studying concurrency.")
+            self.assertEqual(thread["summarized_turns"], 5)
+
+        self.assertEqual(client.responses.create.call_count, 2)
+
+    @patch("builtins.print")
+    @patch("ask.has_speech", return_value=True)
+    @patch("ask.speak")
+    def test_summary_failure_does_not_suppress_answer(
+        self, speak, _has_speech, _print
+    ):
+        client = Mock()
+        client.responses.create.side_effect = [
+            SimpleNamespace(output_text="The fifth answer."),
+            RuntimeError("offline"),
+        ]
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="Question five?")],
+            SimpleNamespace(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            audio.write_bytes(b"RIFF fake audio")
+            store = ask.ThreadStore(Path(directory) / "threads")
+            store.create("Operating Systems")
+            for number in range(4):
+                store.append_turn(f"Question {number}?", f"Answer {number}.")
+            ask.answer_question(
+                client,
+                transcriber,
+                TEST_SETTINGS,
+                audio,
+                thread_store=store,
+            )
+            self.assertEqual(len(store.current()["turns"]), 5)
+            self.assertEqual(store.current()["summary"], "")
+
+        speak.assert_called_once_with("The fifth answer.", ())
+
+
 class InputDelayTest(unittest.TestCase):
     @patch("builtins.print")
     @patch("ask.time.sleep")
