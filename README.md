@@ -94,6 +94,16 @@ questions to the normal context-free behavior.
 Threads are local JSON files in `~/.config/glossy/threads/`. Version 1 learns
 from your conversation; it does not import the book, PDF, or web page itself.
 
+## Code layout
+
+- `ask.py` starts the application.
+- `listener.py` owns keyboard events and the push-to-talk flow.
+- `audio.py` owns recording, transcription, speech detection, and playback.
+- `openai_api.py` owns answer and thread-summary API requests.
+- `threads.py` owns thread commands, context, and local persistence.
+- `settings.py` owns environment and runtime configuration validation.
+- `visualizer.py` owns the on-screen recording indicator.
+
 ## Change voice
 
 List the English Piper voices, type one of their names, and make it active with:
