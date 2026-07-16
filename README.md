@@ -71,6 +71,29 @@ venv/bin/python ask.py
 
 Edit `system-prompt.md` to control answer length and style, then restart Glossy.
 
+## Reading threads
+
+Glossy can keep separate context for books, chapters, papers, or other material.
+Use the same push-to-talk button and say one of these commands:
+
+```text
+new thread Operating Systems
+switch to thread Operating Systems
+list threads
+current thread
+threads mode
+exit threads mode
+```
+
+Creating or switching a thread enables threads mode. While it is enabled, Glossy
+uses the thread's six most recent questions and answers as context. After every
+five answered questions, it also condenses the new conversation into a short
+long-term memory. Exiting threads mode preserves the selected thread but returns
+questions to the normal context-free behavior.
+
+Threads are local JSON files in `~/.config/glossy/threads/`. Version 1 learns
+from your conversation; it does not import the book, PDF, or web page itself.
+
 ## Change voice
 
 List the English Piper voices, type one of their names, and make it active with:
