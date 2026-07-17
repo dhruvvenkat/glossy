@@ -109,26 +109,37 @@ def pick_thread(store, keyboards, transcript_path):
         (index for index, thread in enumerate(items) if thread["id"] == store.active_id),
         0,
     )
-    while True:
-        transcript_path.write_text(thread_picker_text(items, selected) + "\n")
-        readable, _, _ = select.select(keyboards, [], [], RECONNECT_SECONDS)
-        if not readable and not keyboards_connected(keyboards):
-            raise OSError(errno.ENODEV, "keyboard disconnected")
-        for keyboard in readable:
-            for event in keyboard.read():
-                if event.type != ecodes.EV_KEY:
-                    continue
-                if event.code == ecodes.KEY_UP and event.value in {1, 2}:
-                    selected = max(0, selected - 1)
-                elif event.code == ecodes.KEY_DOWN and event.value in {1, 2}:
-                    selected = min(len(items) - 1, selected + 1)
-                elif (
-                    event.code in {ecodes.KEY_ENTER, ecodes.KEY_KPENTER}
-                    and event.value == 1
-                ):
-                    return store.activate(items[selected]["name"])
-                elif event.code == ecodes.KEY_ESC and event.value == 1:
-                    return None
+    grabbed = []
+    try:
+        for keyboard in keyboards:
+            keyboard.grab()
+            grabbed.append(keyboard)
+        while True:
+            transcript_path.write_text(thread_picker_text(items, selected) + "\n")
+            readable, _, _ = select.select(keyboards, [], [], RECONNECT_SECONDS)
+            if not readable and not keyboards_connected(keyboards):
+                raise OSError(errno.ENODEV, "keyboard disconnected")
+            for keyboard in readable:
+                for event in keyboard.read():
+                    if event.type != ecodes.EV_KEY:
+                        continue
+                    if event.code == ecodes.KEY_UP and event.value in {1, 2}:
+                        selected = max(0, selected - 1)
+                    elif event.code == ecodes.KEY_DOWN and event.value in {1, 2}:
+                        selected = min(len(items) - 1, selected + 1)
+                    elif (
+                        event.code in {ecodes.KEY_ENTER, ecodes.KEY_KPENTER}
+                        and event.value == 1
+                    ):
+                        return store.activate(items[selected]["name"])
+                    elif event.code == ecodes.KEY_ESC and event.value == 1:
+                        return None
+    finally:
+        for keyboard in reversed(grabbed):
+            try:
+                keyboard.ungrab()
+            except OSError:
+                pass
 
 
 def answer_question(

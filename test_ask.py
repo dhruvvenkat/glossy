@@ -399,6 +399,27 @@ class ThreadModeTest(unittest.TestCase):
             self.assertEqual(store.current()["name"], "Compilers")
             self.assertIn("› Compilers", transcript.read_text())
 
+        keyboard.grab.assert_called_once_with()
+        keyboard.ungrab.assert_called_once_with()
+
+    def test_picker_releases_prior_keyboard_if_grab_fails(self):
+        first = Mock()
+        second = Mock()
+        second.grab.side_effect = OSError("busy")
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = threads.ThreadStore(Path(directory) / "threads")
+            store.create("Operating Systems")
+            with self.assertRaises(OSError):
+                listener.pick_thread(
+                    store,
+                    [first, second],
+                    Path(directory) / "question.txt",
+                )
+
+        first.ungrab.assert_called_once_with()
+        second.ungrab.assert_not_called()
+
     def test_picker_text_scrolls_to_selection(self):
         items = [{"name": f"Thread {index}"} for index in range(8)]
         rendered = threads.thread_picker_text(items, 7)
