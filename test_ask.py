@@ -255,6 +255,40 @@ class AnswerQuestionTest(unittest.TestCase):
         player.wait.assert_called_once_with(timeout=1)
         output.assert_called_once_with("Glossy: speech stopped.", flush=True)
 
+    @patch("builtins.print")
+    @patch("audio.select.select")
+    @patch("audio.subprocess.Popen")
+    @patch("audio.subprocess.run")
+    def test_record_button_stops_speech_and_requests_recording(
+        self, _run, popen, select_, _output
+    ):
+        keyboard = Mock()
+        keyboard.read.return_value = [
+            SimpleNamespace(
+                type=audio_io.ecodes.EV_KEY,
+                code=audio_io.ecodes.KEY_RIGHTALT,
+                value=1,
+            )
+        ]
+        select_.return_value = ([keyboard], [], [])
+        player = Mock()
+        player.poll.return_value = None
+        popen.return_value = player
+
+        with tempfile.TemporaryDirectory() as directory:
+            voice_dir = Path(directory)
+            (voice_dir / "voice.onnx").touch()
+            (voice_dir / "selected").write_text("voice\n")
+            with patch.object(audio_io, "VOICE_DIR", voice_dir):
+                result = audio_io.speak(
+                    "Stop talking.",
+                    [keyboard],
+                    recording_button=audio_io.ecodes.KEY_RIGHTALT,
+                )
+
+        self.assertEqual(result, audio_io.RECORDING_REQUESTED)
+        player.terminate.assert_called_once()
+
     @patch("audio.subprocess.run")
     def test_blips_use_requested_sounds(self, run):
         audio_io.play_blip(audio_io.START_BLIP_SOUND)
@@ -384,6 +418,35 @@ class ThreadModeTest(unittest.TestCase):
             self.assertEqual(len(store.current()["turns"]), 2)
 
         speak.assert_called_once_with("It prevents races around shared state.", ())
+
+    @patch("listener.has_speech", return_value=True)
+    @patch("listener.speak", return_value=False)
+    def test_escape_during_speech_discards_thread_turn(self, _speak, _has_speech):
+        client = Mock()
+        client.responses.create.return_value = SimpleNamespace(
+            output_text="A discarded answer."
+        )
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="A discarded question?")],
+            SimpleNamespace(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            audio.write_bytes(b"RIFF fake audio")
+            store = threads.ThreadStore(Path(directory) / "threads")
+            store.create("Operating Systems")
+            self.assertFalse(
+                listener.answer_question(
+                    client,
+                    transcriber,
+                    TEST_SETTINGS,
+                    audio,
+                    thread_store=store,
+                )
+            )
+            self.assertEqual(store.current()["turns"], [])
 
     @patch("listener.has_speech", return_value=True)
     @patch("listener.speak")
@@ -617,6 +680,68 @@ class InputDelayTest(unittest.TestCase):
         stop_visualizer.assert_called_once_with(visualizer)
         stop_recording.assert_called_once()
         stop_transcript_stream.assert_called_once_with(transcript_stream)
+        answer_question.assert_called_once()
+
+    @patch("builtins.print")
+    @patch("listener.answer_question", return_value=audio_io.RECORDING_REQUESTED)
+    @patch("listener.stop_transcript_stream")
+    @patch("listener.start_transcript_stream")
+    @patch("listener.stop_recording")
+    @patch("listener.stop_visualizer")
+    @patch("listener.start_visualizer")
+    @patch("listener.start_recording")
+    @patch("listener.play_blip")
+    def test_record_button_during_speech_starts_another_hold(
+        self,
+        _play_blip,
+        start_recording,
+        start_visualizer,
+        _stop_visualizer,
+        _stop_recording,
+        start_transcript_stream,
+        _stop_transcript_stream,
+        answer_question,
+        _print,
+    ):
+        recorders = [Mock(), Mock()]
+        for recorder in recorders:
+            recorder.poll.return_value = 0
+        start_recording.side_effect = recorders
+        start_visualizer.side_effect = [Mock(), Mock()]
+        start_transcript_stream.side_effect = [Mock(), Mock()]
+        keyboard = Mock()
+        keyboard.read.side_effect = [
+            [
+                SimpleNamespace(
+                    type=listener.ecodes.EV_KEY,
+                    code=listener.ecodes.KEY_RIGHTALT,
+                    value=1,
+                )
+            ],
+            [
+                SimpleNamespace(
+                    type=listener.ecodes.EV_KEY,
+                    code=listener.ecodes.KEY_RIGHTALT,
+                    value=0,
+                )
+            ],
+        ]
+        selections = [([keyboard], [], []), ([keyboard], [], []), KeyboardInterrupt]
+        threshold = TEST_SETTINGS["hold_seconds"]
+
+        with (
+            patch("listener.find_keyboards", return_value=[keyboard]),
+            patch("listener.keyboards_connected", return_value=True),
+            patch("listener.select.select", side_effect=selections),
+            patch(
+                "listener.time.monotonic",
+                side_effect=[0.0, threshold, 1.0, 1.0 + threshold],
+            ),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            listener.listen(Mock(), Mock(), TEST_SETTINGS)
+
+        self.assertEqual(start_recording.call_count, 2)
         answer_question.assert_called_once()
 
 

@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from audio import (
+    RECORDING_REQUESTED,
     START_BLIP_SOUND,
     STOP_BLIP_SOUND,
     has_speech,
@@ -27,6 +28,16 @@ from threads import handle_thread_command
 
 VISUALIZER_SCRIPT = Path(__file__).parent / "visualizer.py"
 RECONNECT_SECONDS = 5
+
+
+def speak_response(text, keyboards, speaking_path, recording_button):
+    if not keyboards:
+        return (
+            speak(text, keyboards)
+            if speaking_path is None
+            else speak(text, keyboards, speaking_path)
+        )
+    return speak(text, keyboards, speaking_path, recording_button)
 
 
 def find_keyboards(button_code):
@@ -121,14 +132,24 @@ def answer_question(
     if thread_store is not None:
         command_answer = handle_thread_command(transcript, thread_store)
         if command_answer is not None:
-            if speaking_path is None:
-                speak(command_answer, keyboards)
-            else:
-                speak(command_answer, keyboards, speaking_path)
-            return True
+            result = speak_response(
+                command_answer,
+                keyboards,
+                speaking_path,
+                getattr(ecodes, settings["button"]),
+            )
+            return result if result is False or result == RECORDING_REQUESTED else True
 
     thread = thread_store.current() if thread_store is not None else None
     answer = ask_openai(client, settings, transcript, thread)
+    result = speak_response(
+        answer,
+        keyboards,
+        speaking_path,
+        getattr(ecodes, settings["button"]),
+    )
+    if result is False or result == RECORDING_REQUESTED:
+        return result
     if thread is not None:
         thread = thread_store.append_turn(transcript, answer)
         try:
@@ -141,19 +162,20 @@ def answer_question(
                 file=sys.stderr,
                 flush=True,
             )
-    if speaking_path is None:
-        speak(answer, keyboards)
-    else:
-        speak(answer, keyboards, speaking_path)
     return True
 
 
-def report_error(error, keyboards=()):
+def report_error(error, keyboards=(), recording_button=None):
     print(f"Glossy: {error}", file=sys.stderr, flush=True)
     try:
-        speak("Glossy failed. Check the service log.", keyboards)
+        return speak_response(
+            "Glossy failed. Check the service log.",
+            keyboards,
+            None,
+            recording_button,
+        )
     except Exception:
-        pass
+        return False
 
 
 def listen_connected(
@@ -204,6 +226,7 @@ def listen_connected(
                     if event.value == 1 and pressed_at is None:
                         pressed_at = time.monotonic()
                     elif event.value == 0 and pressed_at is not None:
+                        resume_recording = False
                         try:
                             if recorder is None:
                                 print("Ignored short press.", flush=True)
@@ -213,7 +236,7 @@ def listen_connected(
                                 transcript_stream = None
                                 play_blip(STOP_BLIP_SOUND)
                                 print("Answering...", flush=True)
-                                answer_question(
+                                result = answer_question(
                                     client,
                                     transcriber,
                                     settings,
@@ -223,11 +246,18 @@ def listen_connected(
                                     audio_path.with_suffix(".speaking"),
                                     thread_store,
                                 )
+                                if result == RECORDING_REQUESTED:
+                                    pressed_at = time.monotonic()
+                                    resume_recording = True
                                 stop_visualizer(visualizer)
                                 visualizer = None
-                                print("Ready.", flush=True)
+                                if not resume_recording:
+                                    print("Ready.", flush=True)
                         except Exception as error:
-                            report_error(error, keyboards)
+                            result = report_error(error, keyboards, button_code)
+                            if result == RECORDING_REQUESTED:
+                                pressed_at = time.monotonic()
+                                resume_recording = True
                         finally:
                             if transcript_stream is not None:
                                 stop_transcript_stream(transcript_stream)
@@ -235,7 +265,8 @@ def listen_connected(
                             if visualizer is not None:
                                 stop_visualizer(visualizer)
                                 visualizer = None
-                            pressed_at = None
+                            if not resume_recording:
+                                pressed_at = None
                             recorder = None
                             audio_path.unlink(missing_ok=True)
                             question_path.unlink(missing_ok=True)

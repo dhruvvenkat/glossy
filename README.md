@@ -7,6 +7,10 @@ configured threshold are ignored; a blip starts recording and a reversed blip
 marks its end. While recording, the live transcript refreshes in the terminal and a
 small voice-reactive indicator appears at the bottom-center of the screen.
 
+While Glossy is speaking, press Escape to stop playback and discard that
+question and answer. Holding the configured push-to-talk button also discards
+it, then starts a new recording once the normal hold threshold is reached.
+
 ## Setup
 
 ```sh

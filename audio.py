@@ -18,6 +18,7 @@ START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
 STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
 TRANSCRIPT_PREVIEW_SECONDS = 0.25
+RECORDING_REQUESTED = "recording_requested"
 
 
 def start_recording(path):
@@ -57,20 +58,24 @@ def play_blip(sound):
     subprocess.run(["paplay", str(sound)], check=False)
 
 
-def speech_cancelled(keyboards):
+def speech_interruption(keyboards, recording_button=None):
     readable, _, _ = select.select(keyboards, [], [], 0.05)
+    interruption = None
     for keyboard in readable:
         for event in keyboard.read():
-            if (
-                event.type == ecodes.EV_KEY
-                and event.code == ecodes.KEY_ESC
-                and event.value == 1
-            ):
-                return True
-    return False
+            if event.type != ecodes.EV_KEY:
+                continue
+            if event.code == ecodes.KEY_ESC and event.value == 1:
+                return False
+            if recording_button is not None and event.code == recording_button:
+                if event.value == 1:
+                    interruption = RECORDING_REQUESTED
+                elif event.value == 0 and interruption == RECORDING_REQUESTED:
+                    interruption = False
+    return interruption
 
 
-def speak(text, keyboards=(), speaking_path=None):
+def speak(text, keyboards=(), speaking_path=None, recording_button=None):
     selection = VOICE_DIR / "selected"
     voice = selection.read_text().strip() if selection.exists() else DEFAULT_VOICE
     voice_model = VOICE_DIR / f"{voice}.onnx"
@@ -102,7 +107,8 @@ def speak(text, keyboards=(), speaking_path=None):
             speaking_path.touch()
         player = subprocess.Popen(["aplay", "--quiet", str(speech_path)])
         while player.poll() is None:
-            if speech_cancelled(keyboards):
+            interruption = speech_interruption(keyboards, recording_button)
+            if interruption is not None:
                 player.terminate()
                 try:
                     player.wait(timeout=1)
@@ -110,7 +116,7 @@ def speak(text, keyboards=(), speaking_path=None):
                     player.kill()
                     player.wait()
                 print("Glossy: speech stopped.", flush=True)
-                return False
+                return interruption
         if player.returncode:
             raise subprocess.CalledProcessError(player.returncode, player.args)
         return True
