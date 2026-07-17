@@ -96,9 +96,10 @@ long-term memory. Exiting threads mode preserves the selected thread but returns
 questions to the normal context-free behavior.
 
 Saying `list threads` replaces the live transcript with a thread picker. Use Up
-and Down to move, Enter to switch, or Escape to cancel. You can still switch
-directly by saying `switch to thread` followed by its name. While the picker is
-open, Glossy captures the keyboard so those keys do not reach the background app.
+and Down to move, Enter to switch and hear confirmation, or Escape to cancel.
+You can still switch directly by saying `switch to thread` followed by its name.
+While the picker is open, Glossy captures the keyboard so those keys do not reach
+the background app.
 
 Threads are local JSON files in `~/.config/glossy/threads/`. Version 1 learns
 from your conversation; it does not import the book, PDF, or web page itself.

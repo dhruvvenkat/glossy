@@ -177,8 +177,16 @@ def answer_question(
     if thread_store is not None:
         command_answer = handle_thread_command(transcript, thread_store)
         if command_answer is THREAD_PICKER_REQUESTED:
-            pick_thread(thread_store, keyboards, transcript_path)
-            return True
+            selected = pick_thread(thread_store, keyboards, transcript_path)
+            if selected is None:
+                return True
+            result = speak_response(
+                f"Switched thread to {selected['name']}.",
+                keyboards,
+                speaking_path,
+                getattr(ecodes, settings["button"]),
+            )
+            return result if result is False or result == RECORDING_REQUESTED else True
         if command_answer is not None:
             result = speak_response(
                 command_answer,

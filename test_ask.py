@@ -430,7 +430,7 @@ class ThreadModeTest(unittest.TestCase):
     @patch("listener.pick_thread")
     @patch("listener.has_speech", return_value=True)
     @patch("listener.speak")
-    def test_list_threads_opens_picker_without_speech(
+    def test_list_threads_opens_picker_and_confirms_selection(
         self, speak, _has_speech, pick_thread
     ):
         client = Mock()
@@ -440,6 +440,7 @@ class ThreadModeTest(unittest.TestCase):
             SimpleNamespace(),
         )
         keyboard = Mock()
+        pick_thread.return_value = {"name": "Operating Systems"}
 
         with tempfile.TemporaryDirectory() as directory:
             audio = Path(directory) / "question.wav"
@@ -460,7 +461,12 @@ class ThreadModeTest(unittest.TestCase):
             )
 
         pick_thread.assert_called_once_with(store, [keyboard], transcript)
-        speak.assert_not_called()
+        speak.assert_called_once_with(
+            "Switched thread to Operating Systems.",
+            [keyboard],
+            None,
+            listener.ecodes.KEY_RIGHTALT,
+        )
         client.responses.create.assert_not_called()
 
     @patch("listener.has_speech", return_value=True)
