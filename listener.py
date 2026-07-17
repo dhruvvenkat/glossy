@@ -24,7 +24,11 @@ from audio import (
 )
 from openai_api import answer as ask_openai
 from openai_api import summarize as summarize_thread
-from threads import handle_thread_command
+from threads import (
+    THREAD_PICKER_REQUESTED,
+    handle_thread_command,
+    thread_picker_text,
+)
 
 VISUALIZER_SCRIPT = Path(__file__).parent / "visualizer.py"
 RECONNECT_SECONDS = 5
@@ -97,6 +101,47 @@ def stop_visualizer(visualizer):
             visualizer.wait()
 
 
+def pick_thread(store, keyboards, transcript_path):
+    if transcript_path is None or not keyboards:
+        raise RuntimeError("The thread picker requires an active keyboard and overlay")
+    items = store.list()
+    selected = next(
+        (index for index, thread in enumerate(items) if thread["id"] == store.active_id),
+        0,
+    )
+    grabbed = []
+    try:
+        for keyboard in keyboards:
+            keyboard.grab()
+            grabbed.append(keyboard)
+        while True:
+            transcript_path.write_text(thread_picker_text(items, selected) + "\n")
+            readable, _, _ = select.select(keyboards, [], [], RECONNECT_SECONDS)
+            if not readable and not keyboards_connected(keyboards):
+                raise OSError(errno.ENODEV, "keyboard disconnected")
+            for keyboard in readable:
+                for event in keyboard.read():
+                    if event.type != ecodes.EV_KEY:
+                        continue
+                    if event.code == ecodes.KEY_UP and event.value in {1, 2}:
+                        selected = max(0, selected - 1)
+                    elif event.code == ecodes.KEY_DOWN and event.value in {1, 2}:
+                        selected = min(len(items) - 1, selected + 1)
+                    elif (
+                        event.code in {ecodes.KEY_ENTER, ecodes.KEY_KPENTER}
+                        and event.value == 1
+                    ):
+                        return store.activate(items[selected]["name"])
+                    elif event.code == ecodes.KEY_ESC and event.value == 1:
+                        return None
+    finally:
+        for keyboard in reversed(grabbed):
+            try:
+                keyboard.ungrab()
+            except OSError:
+                pass
+
+
 def answer_question(
     client,
     transcriber,
@@ -131,6 +176,17 @@ def answer_question(
 
     if thread_store is not None:
         command_answer = handle_thread_command(transcript, thread_store)
+        if command_answer is THREAD_PICKER_REQUESTED:
+            selected = pick_thread(thread_store, keyboards, transcript_path)
+            if selected is None:
+                return True
+            result = speak_response(
+                f"Switched thread to {selected['name']}.",
+                keyboards,
+                speaking_path,
+                getattr(ecodes, settings["button"]),
+            )
+            return result if result is False or result == RECORDING_REQUESTED else True
         if command_answer is not None:
             result = speak_response(
                 command_answer,

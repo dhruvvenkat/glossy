@@ -355,6 +355,119 @@ class ThreadModeTest(unittest.TestCase):
                 threads.handle_thread_command("threads mode", store),
                 "Threads mode is on for Operating Systems.",
             )
+            store.create("Compilers")
+            self.assertEqual(
+                threads.handle_thread_command(
+                    "switch to thread Operating Systems", store
+                ),
+                "Switched to thread Operating Systems.",
+            )
+            self.assertIs(
+                threads.handle_thread_command("list threads", store),
+                threads.THREAD_PICKER_REQUESTED,
+            )
+
+    @patch("listener.select.select")
+    def test_picker_uses_arrows_and_enter(self, select_):
+        keyboard = Mock()
+        keyboard.read.side_effect = [
+            [
+                SimpleNamespace(
+                    type=listener.ecodes.EV_KEY,
+                    code=listener.ecodes.KEY_UP,
+                    value=1,
+                )
+            ],
+            [
+                SimpleNamespace(
+                    type=listener.ecodes.EV_KEY,
+                    code=listener.ecodes.KEY_ENTER,
+                    value=1,
+                )
+            ],
+        ]
+        select_.side_effect = [([keyboard], [], []), ([keyboard], [], [])]
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = threads.ThreadStore(Path(directory) / "threads")
+            store.create("Compilers")
+            store.create("Operating Systems")
+            transcript = Path(directory) / "question.txt"
+            selected = listener.pick_thread(store, [keyboard], transcript)
+
+            self.assertEqual(selected["name"], "Compilers")
+            self.assertEqual(store.current()["name"], "Compilers")
+            self.assertIn("› Compilers", transcript.read_text())
+
+        keyboard.grab.assert_called_once_with()
+        keyboard.ungrab.assert_called_once_with()
+
+    def test_picker_releases_prior_keyboard_if_grab_fails(self):
+        first = Mock()
+        second = Mock()
+        second.grab.side_effect = OSError("busy")
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = threads.ThreadStore(Path(directory) / "threads")
+            store.create("Operating Systems")
+            with self.assertRaises(OSError):
+                listener.pick_thread(
+                    store,
+                    [first, second],
+                    Path(directory) / "question.txt",
+                )
+
+        first.ungrab.assert_called_once_with()
+        second.ungrab.assert_not_called()
+
+    def test_picker_text_scrolls_to_selection(self):
+        items = [{"name": f"Thread {index}"} for index in range(8)]
+        rendered = threads.thread_picker_text(items, 7)
+        self.assertIn("↑ more", rendered)
+        self.assertIn("› Thread 7", rendered)
+        self.assertNotIn("Thread 0", rendered)
+
+    @patch("listener.pick_thread")
+    @patch("listener.has_speech", return_value=True)
+    @patch("listener.speak")
+    def test_list_threads_opens_picker_and_confirms_selection(
+        self, speak, _has_speech, pick_thread
+    ):
+        client = Mock()
+        transcriber = Mock()
+        transcriber.transcribe.return_value = (
+            [SimpleNamespace(text="List threads.")],
+            SimpleNamespace(),
+        )
+        keyboard = Mock()
+        pick_thread.return_value = {"name": "Operating Systems"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            audio = Path(directory) / "question.wav"
+            transcript = audio.with_suffix(".txt")
+            audio.write_bytes(b"RIFF fake audio")
+            store = threads.ThreadStore(Path(directory) / "threads")
+            store.create("Operating Systems")
+            self.assertTrue(
+                listener.answer_question(
+                    client,
+                    transcriber,
+                    TEST_SETTINGS,
+                    audio,
+                    keyboards=[keyboard],
+                    transcript_path=transcript,
+                    thread_store=store,
+                )
+            )
+
+        pick_thread.assert_called_once_with(store, [keyboard], transcript)
+        speak.assert_called_once_with(
+            "Switched thread to Operating Systems.",
+            [keyboard],
+            None,
+            listener.ecodes.KEY_RIGHTALT,
+        )
+        client.responses.create.assert_not_called()
 
     @patch("listener.has_speech", return_value=True)
     @patch("listener.speak")

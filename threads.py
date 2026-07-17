@@ -10,6 +10,8 @@ THREADS_DIR = Path("~/.config/glossy/threads").expanduser()
 THREAD_RECENT_TURNS = 6
 THREAD_SUMMARY_MAX_CHARS = 2500
 THREAD_NAME_MAX_CHARS = 80
+THREAD_PICKER_ROWS = 5
+THREAD_PICKER_REQUESTED = object()
 
 
 class ThreadStore:
@@ -160,7 +162,7 @@ def handle_thread_command(transcript, store):
         if command.casefold() == "list threads":
             threads = store.list()
             return (
-                "Your threads are " + ", ".join(thread["name"] for thread in threads) + "."
+                THREAD_PICKER_REQUESTED
                 if threads
                 else "You do not have any threads yet."
             )
@@ -179,6 +181,25 @@ def handle_thread_command(transcript, store):
     except ValueError as error:
         return str(error)
     return None
+
+
+def thread_picker_text(items, selected):
+    start = max(
+        0,
+        min(selected - THREAD_PICKER_ROWS // 2, len(items) - THREAD_PICKER_ROWS),
+    )
+    end = min(len(items), start + THREAD_PICKER_ROWS)
+    lines = ["Choose a thread", ""]
+    if start:
+        lines.append("  ↑ more")
+    lines.extend(
+        f"{'›' if index == selected else ' '} {items[index]['name']}"
+        for index in range(start, end)
+    )
+    if end < len(items):
+        lines.append("  ↓ more")
+    lines.extend(["", "↑/↓ move   Enter select   Esc cancel"])
+    return "\n".join(lines)
 
 
 def thread_input(thread, question):
