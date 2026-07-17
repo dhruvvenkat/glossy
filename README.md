@@ -7,6 +7,10 @@ configured threshold are ignored; a blip starts recording and a reversed blip
 marks its end. While recording, the live transcript refreshes in the terminal and a
 small voice-reactive indicator appears at the bottom-center of the screen.
 
+While Glossy is speaking, press Escape to stop playback and discard that
+question and answer. Holding the configured push-to-talk button also discards
+it, then starts a new recording once the normal hold threshold is reached.
+
 ## Setup
 
 ```sh
@@ -90,6 +94,10 @@ uses the thread's six most recent questions and answers as context. After every
 five answered questions, it also condenses the new conversation into a short
 long-term memory. Exiting threads mode preserves the selected thread but returns
 questions to the normal context-free behavior.
+
+Saying `list threads` replaces the live transcript with a thread picker. Use Up
+and Down to move, Enter to switch, or Escape to cancel. You can still switch
+directly by saying `switch to thread` followed by its name.
 
 Threads are local JSON files in `~/.config/glossy/threads/`. Version 1 learns
 from your conversation; it does not import the book, PDF, or web page itself.
