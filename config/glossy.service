@@ -6,7 +6,7 @@ PartOf=graphical-session.target
 [Service]
 Type=simple
 WorkingDirectory=%h/Documents/Programming/glossy
-ExecStart=%h/Documents/Programming/glossy/venv/bin/python %h/Documents/Programming/glossy/ask.py
+ExecStart=%h/Documents/Programming/glossy/venv/bin/python %h/Documents/Programming/glossy/src/ask.py
 Restart=on-failure
 RestartSec=2
 Environment=PYTHONUNBUFFERED=1

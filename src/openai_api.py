@@ -2,7 +2,7 @@ from pathlib import Path
 
 from threads import thread_input
 
-SYSTEM_PROMPT = (Path(__file__).parent / "system-prompt.md").read_text().strip()
+SYSTEM_PROMPT = (Path(__file__).resolve().parent.parent / "config" / "system-prompt.md").read_text().strip()
 THREAD_SUMMARY_EVERY = 5
 THREAD_PROMPT = """You are answering within an ongoing reading thread. Use the supplied
 thread memory and recent conversation as background. Do not invent details that are not

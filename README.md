@@ -33,7 +33,7 @@ OPENAI_API_KEY=your-key
 
 Keep it private with `chmod 600 ~/.config/glossy.env`.
 
-Runtime behavior lives in `config.json`:
+Runtime behavior lives in `config/config.json`:
 
 ```json
 {
@@ -70,10 +70,10 @@ louder than the noise measured at the start of each recording.
 Run Glossy in the foreground first:
 
 ```sh
-venv/bin/python ask.py
+venv/bin/python src/ask.py
 ```
 
-Edit `system-prompt.md` to control answer length and style, then restart Glossy.
+Edit `config/system-prompt.md` to control answer length and style, then restart Glossy.
 
 ## Reading threads
 
@@ -106,20 +106,20 @@ from your conversation; it does not import the book, PDF, or web page itself.
 
 ## Code layout
 
-- `ask.py` starts the application.
-- `listener.py` owns keyboard events and the push-to-talk flow.
-- `audio.py` owns recording, transcription, speech detection, and playback.
-- `openai_api.py` owns answer and thread-summary API requests.
-- `threads.py` owns thread commands, context, and local persistence.
-- `settings.py` owns environment and runtime configuration validation.
-- `visualizer.py` owns the on-screen recording indicator.
+- `src/ask.py` starts the application.
+- `src/listener.py` owns keyboard events and the push-to-talk flow.
+- `src/audio.py` owns recording, transcription, speech detection, and playback.
+- `src/openai_api.py` owns answer and thread-summary API requests.
+- `src/threads.py` owns thread commands, context, and local persistence.
+- `src/settings.py` owns environment and runtime configuration validation.
+- `src/visualizer.py` owns the on-screen recording indicator.
 
 ## Change voice
 
 List the English Piper voices, type one of their names, and make it active with:
 
 ```sh
-venv/bin/python choose_voice.py
+venv/bin/python src/choose_voice.py
 ```
 
 The utility downloads the voice, selects it, and restarts Glossy automatically.
@@ -135,7 +135,7 @@ The included unit assumes this repository remains at
 
 ```sh
 mkdir -p ~/.config/systemd/user
-ln -sf "$PWD/glossy.service" ~/.config/systemd/user/glossy.service
+ln -sf "$PWD/config/glossy.service" ~/.config/systemd/user/glossy.service
 systemctl --user daemon-reload
 systemctl --user enable --now glossy.service
 ```

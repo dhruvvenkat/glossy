@@ -13,9 +13,10 @@ import wave
 from array import array
 from pathlib import Path
 
-VOICE_DIR = Path(__file__).parent / "voices"
-START_BLIP_SOUND = Path(__file__).parent / "blip.mp3"
-STOP_BLIP_SOUND = Path(__file__).parent / "blip-reversed.mp3"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+VOICE_DIR = PROJECT_ROOT / "voices"
+START_BLIP_SOUND = PROJECT_ROOT / "blip.mp3"
+STOP_BLIP_SOUND = PROJECT_ROOT / "blip-reversed.mp3"
 DEFAULT_VOICE = "en_US-lessac-medium"
 TRANSCRIPT_PREVIEW_SECONDS = 0.25
 RECORDING_REQUESTED = "recording_requested"

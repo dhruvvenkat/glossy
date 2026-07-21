@@ -1,12 +1,15 @@
 import errno
 import json
 import tempfile
+import sys
 import unittest
 import wave
 from array import array
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 import audio as audio_io
 import listener

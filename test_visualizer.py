@@ -1,9 +1,12 @@
 import tempfile
+import sys
 import unittest
 from array import array
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from visualizer import audio_level, blend_color, cascade_progress, primary_geometry, transcript_size
 

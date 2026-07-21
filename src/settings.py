@@ -5,11 +5,12 @@ import math
 import os
 from pathlib import Path
 
-MODEL_DIR = Path(__file__).parent / "models"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MODEL_DIR = PROJECT_ROOT / "models"
 os.environ["HF_HOME"] = str(MODEL_DIR / ".cache")
 
 ENV_FILE = Path("~/.config/glossy.env").expanduser()
-CONFIG_FILE = Path(__file__).parent / "config.json"
+CONFIG_FILE = PROJECT_ROOT / "config" / "config.json"
 
 
 def load_settings(path=CONFIG_FILE):
